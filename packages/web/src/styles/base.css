@@ -1,0 +1,38 @@
+* {
+    box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+    min-height: 100%;
+}
+
+body {
+    margin: 0;
+    background: var(--wiki-bg);
+    color: var(--wiki-ink);
+    font-family: var(--wiki-font-sans);
+}
+
+button,
+input,
+select,
+textarea {
+    font: inherit;
+    color: inherit;
+}
+
+button {
+    -webkit-tap-highlight-color: transparent;
+}
+
+::selection {
+    background: var(--wiki-accent-wash);
+    color: var(--wiki-ink);
+}
+
+:focus-visible {
+    outline: 2px solid var(--wiki-accent);
+    outline-offset: 2px;
+}

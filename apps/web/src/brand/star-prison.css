@@ -1,0 +1,342 @@
+:root {
+    color-scheme: dark;
+    --wiki-bg: #0f1011;
+    --wiki-bg-2: #070808;
+    --wiki-surface: #131516;
+    --wiki-surface-muted: #1a1c1d;
+    --wiki-surface-strong: #242627;
+    --wiki-surface-gradient: linear-gradient(
+        145deg,
+        color-mix(in srgb, #34383b 10%, var(--wiki-surface)),
+        var(--wiki-surface) 50%,
+        color-mix(in srgb, #292c2e 6%, var(--wiki-surface))
+    );
+    --wiki-sidebar-gradient: linear-gradient(
+        155deg,
+        color-mix(in srgb, #34383b 9%, var(--wiki-sidebar-bg)),
+        var(--wiki-sidebar-bg) 54%,
+        color-mix(in srgb, #292c2e 5%, var(--wiki-sidebar-bg))
+    );
+    --wiki-border-gradient: linear-gradient(
+        135deg,
+        color-mix(in srgb, #55595c 38%, var(--wiki-border)),
+        color-mix(in srgb, var(--wiki-accent) 48%, var(--wiki-border)) 62%,
+        color-mix(in srgb, #3f4244 26%, var(--wiki-border))
+    );
+    --wiki-ink: #f0f1f2;
+    --wiki-ink-soft: #c8cacc;
+    --wiki-ink-muted: #8e9092;
+    --wiki-border: #303234;
+    --wiki-border-strong: #55585a;
+    --wiki-sidebar-bg: #101112;
+    --wiki-sidebar-surface: #191b1c;
+    --wiki-sidebar-ink: #e9eaeb;
+    --wiki-sidebar-page-ink: #f0f1f2;
+    --wiki-sidebar-muted: #96989a;
+    --wiki-rail: #3c3f41;
+    --wiki-accent: #e6629a;
+    --wiki-accent-strong: #f07aac;
+    --wiki-accent-soft: #f49bc1;
+    --wiki-accent-ink: #10080c;
+    --wiki-accent-wash: #321824;
+    --wiki-link: #e86b9f;
+    --wiki-link-hover: #f39aba;
+    --wiki-success: #4caf50;
+    --wiki-warning: #cc8800;
+    --wiki-danger: #e05555;
+    --wiki-content-ink: #fff;
+    --wiki-content-link: #e86b9f;
+    --wiki-content-link-hover: #f39aba;
+    --wiki-emphasis-ink: #f0f1f2;
+    --wiki-on-accent-ink: #fff;
+    --wiki-brand-ink: #f0f1f2;
+    --wiki-control-border: #2c2e30;
+    --wiki-control-border-strong: #45484a;
+    --wiki-control-bg: #181a1b;
+    --wiki-control-bg-hover: #202223;
+    --wiki-panel-bg: #121415;
+    --wiki-search-focus-bg: #000;
+    --wiki-popover-bg: #0d0f10;
+    --wiki-popover-bg-strong: #151718;
+    --wiki-context-bg: #121415;
+    --wiki-code-bg: #090a0b;
+    --wiki-emoji-search-bg: #090a0b;
+    --wiki-scroll-thumb: #292b2d;
+    --wiki-ink-dim: #8e9092;
+    --wiki-ink-subtle: #a2a4a6;
+    --wiki-ink-control: #b0b2b4;
+    --wiki-ink-bright-muted: #d0d2d3;
+    --wiki-control-ink: #c5c7c8;
+    --wiki-control-ink-hover: #e6e7e8;
+    --wiki-placeholder: #fff;
+    --wiki-warning-emphasis: #e4a52e;
+    --wiki-brand-shadow: #55223a;
+    --wiki-title-shadow: #472033;
+    --wiki-heading-shadow: #3e1c2d;
+    --wiki-active-shadow: #381a28;
+    --wiki-divider-accent: #6c2a48;
+    --wiki-sidebar-overlay: rgba(16, 17, 18, 0.96);
+    --wiki-shadow-subtle: rgba(0, 0, 0, 0.2);
+    --wiki-shadow-control: rgba(0, 0, 0, 0.3);
+    --wiki-shadow-soft: rgba(0, 0, 0, 0.24);
+    --wiki-shadow-popover: rgba(0, 0, 0, 0.4);
+    --wiki-danger-wash-source: #b7352f;
+    --wiki-trash-ink: #b76e6e;
+    --wiki-restore-border: #3a6a4a;
+    --wiki-restore-ink: #8ed9a8;
+    --wiki-purge-border: #6a2a2a;
+    --wiki-purge-ink: #d98e8e;
+    --wiki-font-sans: 'Noto Sans KR', 'Apple SD Gothic Neo', 'Malgun Gothic', system-ui, sans-serif;
+    --wiki-font-display: 'Black Han Sans', 'Noto Sans KR', 'Apple SD Gothic Neo', sans-serif;
+    --wiki-font-serif: 'Noto Serif KR', 'Apple SD Gothic Neo', serif;
+    --wiki-font-mono: 'SFMono-Regular', consolas, 'Liberation Mono', monospace;
+    --wiki-highlight-bg: #171315;
+    --wiki-highlight-bg-muted: #21191d;
+    --wiki-highlight-bg-gradient: linear-gradient(
+        145deg,
+        color-mix(in srgb, #55585a 5%, var(--wiki-highlight-bg)),
+        var(--wiki-highlight-bg) 50%,
+        color-mix(in srgb, var(--wiki-accent) 4%, var(--wiki-highlight-bg))
+    );
+    --wiki-highlight-border-gradient: linear-gradient(135deg, #fbc3da, #fbc3da 62%, #fbc3da);
+    --wiki-highlight-border: #fbc3da;
+    --wiki-highlight-border-strong: #fbc3da;
+    --wiki-highlight-ink: #f0f1f2;
+    --wiki-highlight-muted: #fff;
+    --wiki-highlight-accent: #f49bc1;
+    --wiki-highlight-danger: #fbc3da;
+    --wiki-highlight-control: #0f1011;
+    --wiki-highlight-control-soft: #191b1c;
+    --wiki-highlight-radius: 2px;
+    --wiki-highlight-shadow: 6px 6px 0 rgba(230, 98, 154, 0.16);
+    --wiki-sidebar-category-gap: 16px;
+    --wiki-sidebar-child-indent: 18px;
+    --wiki-sidebar-font-size: 15px;
+    --wiki-sidebar-category-font-size: 16px;
+    --wiki-sidebar-font-size-compact: 14px;
+    --wiki-sidebar-category-font-size-compact: 14px;
+    --wiki-sidebar-font-size-mobile: 13px;
+    --wiki-sidebar-category-font-size-mobile: 13px;
+}
+
+:root[data-theme='light'] {
+    color-scheme: light;
+    --wiki-bg: #f5efe4;
+    --wiki-bg-2: #eee5d8;
+    --wiki-surface: #fbf7ef;
+    --wiki-surface-muted: #f1e8dd;
+    --wiki-surface-strong: #eadccc;
+    --wiki-surface-gradient: linear-gradient(
+        145deg,
+        color-mix(in srgb, #7898c6 7%, var(--wiki-surface)),
+        var(--wiki-surface) 50%,
+        color-mix(in srgb, #94add1 5%, var(--wiki-surface))
+    );
+    --wiki-sidebar-gradient: linear-gradient(155deg, #fff, var(--wiki-sidebar-bg) 54%, #f1f3f5);
+    --wiki-border-gradient: linear-gradient(
+        135deg,
+        color-mix(in srgb, #7898c6 30%, var(--wiki-border)),
+        color-mix(in srgb, var(--wiki-accent) 38%, var(--wiki-border)) 62%,
+        color-mix(in srgb, #94add1 20%, var(--wiki-border))
+    );
+    --wiki-ink: #251922;
+    --wiki-ink-soft: #493943;
+    --wiki-ink-muted: #756670;
+    --wiki-border: #d7d3dc;
+    --wiki-border-strong: #c4bac9;
+    --wiki-sidebar-bg: #fff;
+    --wiki-sidebar-surface: #f7f8fa;
+    --wiki-sidebar-ink: #20262c;
+    --wiki-sidebar-page-ink: #20262c;
+    --wiki-sidebar-muted: #6e7882;
+    --wiki-rail: #ccd2d8;
+    --wiki-accent: #d91680;
+    --wiki-accent-strong: #aa0e63;
+    --wiki-accent-soft: #8d124f;
+    --wiki-accent-ink: #fff;
+    --wiki-accent-wash: #fce6f2;
+    --wiki-link: #bd126d;
+    --wiki-link-hover: #830b4a;
+    --wiki-success: #287c43;
+    --wiki-warning: #936200;
+    --wiki-danger: #b42332;
+    --wiki-content-ink: #251922;
+    --wiki-content-link: #bd126d;
+    --wiki-content-link-hover: #830b4a;
+    --wiki-emphasis-ink: #251922;
+    --wiki-on-accent-ink: #fff;
+    --wiki-brand-ink: #20262c;
+    --wiki-control-border: #ded2c7;
+    --wiki-control-border-strong: #c9b9b1;
+    --wiki-control-bg: #f2ebe2;
+    --wiki-control-bg-hover: #e9ded3;
+    --wiki-panel-bg: #f8f3eb;
+    --wiki-search-focus-bg: #fff;
+    --wiki-popover-bg: #fbf7ef;
+    --wiki-popover-bg-strong: #f8f1e8;
+    --wiki-context-bg: #fbf7ef;
+    --wiki-code-bg: #eee7df;
+    --wiki-emoji-search-bg: #eee7df;
+    --wiki-scroll-thumb: #d0c2b7;
+    --wiki-ink-dim: #82757d;
+    --wiki-ink-subtle: #6e6069;
+    --wiki-ink-control: #5c4d56;
+    --wiki-ink-bright-muted: #3e3038;
+    --wiki-control-ink: #493943;
+    --wiki-control-ink-hover: #251922;
+    --wiki-placeholder: #000;
+    --wiki-warning-emphasis: #8a5c00;
+    --wiki-brand-shadow: #f2b8d8;
+    --wiki-title-shadow: #f0bad7;
+    --wiki-heading-shadow: #f2c5dd;
+    --wiki-active-shadow: #9f0d5a;
+    --wiki-divider-accent: #dba1c1;
+    --wiki-sidebar-overlay: rgba(255, 255, 255, 0.97);
+    --wiki-shadow-subtle: rgba(63, 31, 49, 0.08);
+    --wiki-shadow-control: rgba(63, 31, 49, 0.1);
+    --wiki-shadow-soft: rgba(63, 31, 49, 0.12);
+    --wiki-shadow-popover: rgba(63, 31, 49, 0.16);
+    --wiki-danger-wash-source: #d43b4a;
+    --wiki-trash-ink: #a83142;
+    --wiki-restore-border: #79ad88;
+    --wiki-restore-ink: #256c3b;
+    --wiki-purge-border: #d7a1a8;
+    --wiki-purge-ink: #a32638;
+    --wiki-highlight-bg: #fff6f8;
+    --wiki-highlight-bg-muted: #f9e6ef;
+    --wiki-highlight-bg-gradient: linear-gradient(
+        145deg,
+        color-mix(in srgb, #8173b5 3%, var(--wiki-highlight-bg)),
+        var(--wiki-highlight-bg) 50%,
+        color-mix(in srgb, var(--wiki-accent) 3%, var(--wiki-highlight-bg))
+    );
+    --wiki-highlight-border-gradient: linear-gradient(135deg, #fbc3da, #fbc3da 62%, #fbc3da);
+    --wiki-highlight-border: #fbc3da;
+    --wiki-highlight-border-strong: #fbc3da;
+    --wiki-highlight-ink: #2b1a24;
+    --wiki-highlight-muted: #000;
+    --wiki-highlight-accent: #9f0d5a;
+    --wiki-highlight-danger: #fbc3da;
+    --wiki-highlight-control: #fbf7ef;
+    --wiki-highlight-control-soft: #eee2dc;
+    --wiki-highlight-shadow: 6px 6px 0 rgba(217, 22, 128, 0.12);
+}
+
+body {
+    background:
+        radial-gradient(circle at 14% 8%, color-mix(in srgb, #343638 16%, transparent), transparent 34%),
+        radial-gradient(circle at 88% 18%, color-mix(in srgb, #2b2d2f 10%, transparent), transparent 38%),
+        linear-gradient(
+            145deg,
+            color-mix(in srgb, #252729 10%, var(--wiki-bg)),
+            color-mix(in srgb, #191b1c 8%, var(--wiki-bg)) 46%,
+            var(--wiki-bg-2)
+        );
+    background-attachment: fixed;
+}
+
+:root[data-theme='light'] body {
+    background:
+        radial-gradient(circle at 12% 8%, color-mix(in srgb, #e69abf 13%, transparent), transparent 32%),
+        radial-gradient(circle at 90% 16%, color-mix(in srgb, #9fb7d9 8%, transparent), transparent 38%),
+        linear-gradient(145deg, #f7f1e7, color-mix(in srgb, #7898c6 6%, var(--wiki-bg)) 48%, var(--wiki-bg-2));
+    background-attachment: fixed;
+}
+
+/* Keep the document canvas white while allowing the sidebar to follow the light theme. */
+html[data-theme='light']:root {
+    color-scheme: light;
+    --wiki-bg: #fff;
+    --wiki-bg-2: #fff;
+    --wiki-surface: #fff;
+    --wiki-surface-muted: #fafbfc;
+    --wiki-surface-strong: #f5f7f9;
+    --wiki-surface-gradient: linear-gradient(145deg, #fff, #fff 54%, #fff8fb);
+    --wiki-border-gradient: linear-gradient(
+        135deg,
+        #dfe3e8,
+        color-mix(in srgb, var(--wiki-accent) 34%, #dfe3e8) 62%,
+        #e5e8ec
+    );
+    --wiki-ink: #1f252b;
+    --wiki-ink-soft: #525b65;
+    --wiki-ink-muted: #78828d;
+    --wiki-border: #e0e4e8;
+    --wiki-border-strong: #cbd1d8;
+    --wiki-accent: #f33f7f;
+    --wiki-accent-strong: #d92c69;
+    --wiki-accent-soft: #eb3a76;
+    --wiki-accent-ink: #fff;
+    --wiki-accent-wash: #fff0f5;
+    --wiki-link: #d92c69;
+    --wiki-link-hover: #ad174d;
+    --wiki-success: #2eaa63;
+    --wiki-warning: #ae7900;
+    --wiki-danger: #c93345;
+    --wiki-content-ink: #20262c;
+    --wiki-content-link: #d92c69;
+    --wiki-content-link-hover: #ad174d;
+    --wiki-emphasis-ink: #1f252b;
+    --wiki-on-accent-ink: #fff;
+    --wiki-brand-ink: #20262c;
+    --wiki-control-border: #e1e5e9;
+    --wiki-control-border-strong: #cbd1d8;
+    --wiki-control-bg: #fff;
+    --wiki-control-bg-hover: #fff3f7;
+    --wiki-panel-bg: #fff;
+    --wiki-popover-bg: #fff;
+    --wiki-popover-bg-strong: #fff8fb;
+    --wiki-context-bg: #fff;
+    --wiki-code-bg: #f5f7f9;
+    --wiki-emoji-search-bg: #f5f7f9;
+    --wiki-scroll-thumb: #ccd2d8;
+    --wiki-ink-dim: #8c959e;
+    --wiki-ink-subtle: #6e7882;
+    --wiki-ink-control: #59636d;
+    --wiki-ink-bright-muted: #424c56;
+    --wiki-control-ink: #59636d;
+    --wiki-control-ink-hover: #20262c;
+    --wiki-placeholder: #000;
+    --wiki-warning-emphasis: #986900;
+    --wiki-brand-shadow: transparent;
+    --wiki-title-shadow: #ffe0ea;
+    --wiki-heading-shadow: #ffe0ea;
+    --wiki-active-shadow: rgba(243, 63, 127, 0.16);
+    --wiki-divider-accent: #f2afc5;
+    --wiki-sidebar-bg: #fff;
+    --wiki-sidebar-surface: #f7f8fa;
+    --wiki-sidebar-ink: #20262c;
+    --wiki-sidebar-page-ink: #20262c;
+    --wiki-sidebar-muted: #6e7882;
+    --wiki-rail: #ccd2d8;
+    --wiki-sidebar-gradient: linear-gradient(155deg, #fff, #f7f8fa 54%, #f1f3f5);
+    --wiki-sidebar-overlay: rgba(255, 255, 255, 0.97);
+    --wiki-shadow-subtle: rgba(28, 34, 40, 0.07);
+    --wiki-shadow-control: rgba(28, 34, 40, 0.1);
+    --wiki-shadow-soft: rgba(28, 34, 40, 0.1);
+    --wiki-shadow-popover: rgba(28, 34, 40, 0.18);
+    --wiki-highlight-bg: #fff7fa;
+    --wiki-highlight-bg-muted: #fff0f5;
+    --wiki-highlight-bg-gradient: linear-gradient(145deg, #fff, #fff7fa 54%, #fff0f5);
+    --wiki-highlight-border-gradient: linear-gradient(135deg, #fbc3da, #fbc3da 62%, #fbc3da);
+    --wiki-highlight-border: #fbc3da;
+    --wiki-highlight-border-strong: #fbc3da;
+    --wiki-highlight-ink: #242a30;
+    --wiki-highlight-muted: #000;
+    --wiki-highlight-accent: #d92c69;
+    --wiki-highlight-danger: #fbc3da;
+    --wiki-highlight-control: #fff;
+    --wiki-highlight-control-soft: #fff0f5;
+}
+
+html[data-theme='light']:root body {
+    background-attachment: initial;
+}
+
+html[data-theme='light'] .wiki-sidebar {
+    background: transparent;
+}
+
+html[data-theme='light'] .editor-title-input {
+    color: var(--wiki-accent);
+}

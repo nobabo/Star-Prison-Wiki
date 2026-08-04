@@ -1,0 +1,16 @@
+{
+    "name": "@star-prison/wiki-server",
+    "private": true,
+    "version": "0.1.0",
+    "type": "module",
+    "scripts": {
+        "dev": "cross-env WIKI_EXIT_ON_FATAL=1 tsx watch src/main.ts",
+        "build": "vite build",
+        "start": "node dist/main.js",
+        "typecheck": "tsc --noEmit -p tsconfig.json"
+    },
+    "dependencies": {
+        "@coconut-studio/wiki-contracts": "workspace:*",
+        "@coconut-studio/wiki-server": "workspace:*"
+    }
+}

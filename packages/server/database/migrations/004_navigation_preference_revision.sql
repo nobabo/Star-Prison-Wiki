@@ -1,0 +1,2 @@
+ALTER TABLE wiki_navigation_preferences
+ADD COLUMN IF NOT EXISTS revision BIGINT NOT NULL DEFAULT 1;

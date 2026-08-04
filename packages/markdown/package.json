@@ -1,0 +1,22 @@
+{
+    "name": "@coconut-studio/wiki-markdown",
+    "private": true,
+    "version": "0.1.0",
+    "type": "module",
+    "exports": {
+        ".": "./src/index.ts"
+    },
+    "scripts": {
+        "typecheck": "tsc --noEmit -p tsconfig.json"
+    },
+    "dependencies": {
+        "rehype-sanitize": "^6.0.0",
+        "rehype-stringify": "^10.0.1",
+        "remark-directive": "^4.0.0",
+        "remark-gfm": "^4.0.1",
+        "remark-parse": "^11.0.0",
+        "remark-rehype": "^11.1.2",
+        "unified": "^11.0.5",
+        "unist-util-visit": "^5.0.0"
+    }
+}

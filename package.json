@@ -1,0 +1,41 @@
+{
+    "name": "@star-prison/wiki",
+    "private": true,
+    "version": "0.1.0",
+    "type": "module",
+    "packageManager": "pnpm@11.6.0",
+    "engines": {
+        "node": ">=22.12.0"
+    },
+    "scripts": {
+        "dev": "node --env-file-if-exists=.env tooling/dev.mjs",
+        "build": "pnpm typecheck && pnpm --filter @star-prison/wiki-server build && pnpm --filter @star-prison/wiki-web build",
+        "server": "node --env-file-if-exists=.env tooling/server-supervisor.mjs",
+        "typecheck": "pnpm -r --if-present typecheck",
+        "test": "vitest run --config tooling/vitest.config.ts",
+        "lint": "eslint --config tooling/eslint.config.js . && stylelint --config tooling/stylelint.config.js \"{apps,packages}/**/src/**/*.css\"",
+        "format:check": "prettier --config tooling/prettier.config.js --check ."
+    },
+    "devDependencies": {
+        "@eslint/js": "^9.39.1",
+        "@types/express": "^5.0.6",
+        "@types/node": "^25.0.3",
+        "@types/pg": "^8.16.0",
+        "@types/react": "^19.2.8",
+        "@types/react-dom": "^19.2.3",
+        "@vitejs/plugin-react": "^5.1.2",
+        "concurrently": "^9.2.1",
+        "cross-env": "^10.1.0",
+        "eslint": "^9.39.1",
+        "eslint-plugin-react-hooks": "^7.0.1",
+        "globals": "^16.5.0",
+        "prettier": "^3.7.4",
+        "stylelint": "^17.12.0",
+        "stylelint-config-standard": "^40.0.0",
+        "tsx": "^4.21.0",
+        "typescript": "^5.9.3",
+        "typescript-eslint": "^8.48.1",
+        "vite": "^7.3.0",
+        "vitest": "^4.0.16"
+    }
+}
