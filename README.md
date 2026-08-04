@@ -30,7 +30,7 @@ WIKI_AUTH_MODE=google
 WIKI_JWT_SECRET=충분히-길고-무작위인-서명-키
 ```
 
-- `WIKI_AUTH_MODE`: 인증 모드를 설정하며, 구글 oAuth 로그인은 `google`로 지정합니다.
-- `WIKI_JWT_SECRET`: JWT 서명에 사용하는 충분히 길고 무작위인 비밀값입니다.
+- `WIKI_AUTH_MODE`: 인증 모드를 설정합니다. `JWT`, `google`이 있으며 google oAuth를 사용합니다.
+- `WIKI_JWT_SECRET`: `openssl rand -hex 32`로 난수 생성 후 사용합니다.
 
 어드민 계정은 구글 oAuth로 로그인된 이메일을 등록합니다.

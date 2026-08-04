@@ -6,3 +6,7 @@ onlyBuiltDependencies:
     - esbuild
 allowBuilds:
     esbuild: true
+
+overrides:
+    fast-uri: 3.1.5
+    postcss: 8.5.25
