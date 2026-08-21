@@ -15,6 +15,7 @@ export type WikiServerOptions = {
     repositories: WikiRepositories
     auth: WikiAuthConfig
     forceSecureCookie?: boolean
+    mediaDirectory?: string
     logger?: Pick<Console, 'log' | 'error'>
 }
 
@@ -35,6 +36,7 @@ export function createWikiServer(options: WikiServerOptions): WikiServerRuntime 
             transactionCookieName: 'cs_wiki_google_oauth',
             forceSecureCookie: options.forceSecureCookie ?? false
         },
+        mediaDirectory: options.mediaDirectory,
         logger
     })
     const collaboration = createCollaborationServer({

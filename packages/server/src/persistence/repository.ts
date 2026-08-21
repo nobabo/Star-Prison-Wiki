@@ -21,8 +21,12 @@ export type UpdatePageMetaInput = {
     pageId: string
     title: string
     icon?: string | null
-    slug: string
     visibility: WikiVisibility
+}
+
+export type UpdatePageAddressInput = {
+    pageId: string
+    slug: string
 }
 
 export type SaveNavigationPreferencesInput = {
@@ -38,10 +42,12 @@ export type NavigationPreferencesRecord = {
 
 export interface PageRepository {
     listPages(): Promise<WikiPageDto[]>
+    listPageDetails(): Promise<WikiPageDetailDto[]>
     getPageById(pageId: string): Promise<WikiPageDetailDto | null>
     getPageBySlug(slug: string): Promise<WikiPageDetailDto | null>
     createPage(input: CreatePageInput): Promise<WikiPageDetailDto>
     updatePageMeta(input: UpdatePageMetaInput): Promise<WikiPageDetailDto | null>
+    updatePageAddress(input: UpdatePageAddressInput): Promise<WikiPageDetailDto | null>
     saveMarkdownSnapshot(input: {
         pageId: string
         markdown: string

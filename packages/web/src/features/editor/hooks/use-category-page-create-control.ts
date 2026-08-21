@@ -3,8 +3,10 @@ import { useEffect } from 'react'
 const CATEGORY_MENU_LABEL = '카테고리 작업'
 const CONTROL_ATTRIBUTE = 'data-create-page-control'
 
-export function useCategoryPageCreateControl(pageId: string): void {
+export function useCategoryPageCreateControl(pageId: string, enabled = true): void {
     useEffect(() => {
+        if (!enabled) return
+
         let activeCategoryHeader: HTMLElement | null = null
 
         const rememberCategory = (event: Event) => {
@@ -41,7 +43,7 @@ export function useCategoryPageCreateControl(pageId: string): void {
             observer.disconnect()
             document.querySelectorAll(`[${CONTROL_ATTRIBUTE}]`).forEach((control) => control.remove())
         }
-    }, [pageId])
+    }, [enabled, pageId])
 }
 
 function createPageControl(): HTMLButtonElement {

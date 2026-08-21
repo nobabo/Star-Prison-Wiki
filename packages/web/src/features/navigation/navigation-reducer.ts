@@ -20,6 +20,15 @@ export type NavigationAction =
     | { type: 'rename-category'; categoryId: string; title: string }
     | { type: 'set-category-icon'; categoryId: string; icon: string }
     | { type: 'set-category-document'; categoryId: string; documentSlug: string }
+    | {
+          type: 'update-category-document'
+          categoryId: string
+          previousSlug: string
+          nextSlug: string
+          title: string
+          icon: string
+      }
+    | { type: 'replace-page-slug'; previousSlug: string; nextSlug: string }
     | { type: 'toggle-category'; categoryId: string }
     | { type: 'remove-category'; categoryId: string }
     | { type: 'toggle-favorite'; slug: string }
@@ -102,6 +111,40 @@ export function navigationReducer(state: NavigationState, action: NavigationActi
                 ),
                 rootPageSlugs: state.rootPageSlugs.filter((slug) => slug !== action.documentSlug)
             }
+        case 'update-category-document': {
+            const replace = (slug: string) => (slug === action.previousSlug ? action.nextSlug : slug)
+            return {
+                ...state,
+                categories: state.categories.map((category) => ({
+                    ...category,
+                    ...(category.id === action.categoryId
+                        ? {
+                              title: action.title,
+                              icon: action.icon,
+                              documentSlug: action.nextSlug
+                          }
+                        : category.documentSlug
+                          ? { documentSlug: replace(category.documentSlug) }
+                          : {}),
+                    pageSlugs: uniqueSlugs(category.pageSlugs.map(replace))
+                })),
+                rootPageSlugs: uniqueSlugs(state.rootPageSlugs.map(replace)).filter((slug) => slug !== action.nextSlug),
+                favoriteSlugs: uniqueSlugs(state.favoriteSlugs.map(replace))
+            }
+        }
+        case 'replace-page-slug': {
+            const replace = (slug: string) => (slug === action.previousSlug ? action.nextSlug : slug)
+            return {
+                ...state,
+                categories: state.categories.map((category) => ({
+                    ...category,
+                    ...(category.documentSlug ? { documentSlug: replace(category.documentSlug) } : {}),
+                    pageSlugs: uniqueSlugs(category.pageSlugs.map(replace))
+                })),
+                rootPageSlugs: uniqueSlugs(state.rootPageSlugs.map(replace)),
+                favoriteSlugs: uniqueSlugs(state.favoriteSlugs.map(replace))
+            }
+        }
         case 'toggle-category':
             return {
                 ...state,

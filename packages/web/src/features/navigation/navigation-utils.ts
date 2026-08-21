@@ -28,11 +28,21 @@ export function slugify(value: string): string {
         .replace(/[\u0300-\u036f]/g, '')
         .replace(/[^a-z0-9]+/g, '-')
         .replace(/^-+|-+$/g, '')
-    return slug || `page-${Date.now().toString(36)}`
+    return slug || `page-${crypto.randomUUID()}`
 }
 
 export function createCategoryId(): string {
     return `category-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+export function getPageCategoryRouteKey(categories: SidebarCategory[], slug: string): string | undefined {
+    const category = categories.find((entry) => entry.pageSlugs.includes(slug))
+    return category ? (category.documentSlug ?? category.id) : undefined
+}
+
+export function getVerticalDropEdge(clientY: number, top: number, height: number): 'before' | 'after' {
+    const safeHeight = Math.max(height, 1)
+    return clientY < top + safeHeight / 2 ? 'before' : 'after'
 }
 
 export function moveCategory(

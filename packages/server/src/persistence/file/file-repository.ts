@@ -22,6 +22,7 @@ import type {
     NavigationPreferencesRepository,
     PageRepository,
     PermissionRepository,
+    UpdatePageAddressInput,
     UpdatePageMetaInput,
     WikiRepositories
 } from '../repository'
@@ -91,6 +92,14 @@ export class FileWikiRepository
             .sort((left, right) => left.title.localeCompare(right.title))
     }
 
+    async listPageDetails(): Promise<WikiPageDetailDto[]> {
+        const store = await this.readStableStore()
+        return store.pages
+            .filter((page) => !page.deletedAt)
+            .map((page) => withSnapshot(page, store))
+            .sort((left, right) => left.title.localeCompare(right.title))
+    }
+
     async getPageById(pageId: string): Promise<WikiPageDetailDto | null> {
         const store = await this.readStableStore()
         const page = store.pages.find((entry) => entry.id === pageId && !entry.deletedAt)
@@ -131,11 +140,20 @@ export class FileWikiRepository
         return this.mutate(async (store) => {
             const page = store.pages.find((entry) => entry.id === input.pageId && !entry.deletedAt)
             if (!page) return null
-            assertSlugAvailable(store, input.slug, input.pageId)
             page.title = input.title
             page.icon = normalizePageIcon(input.icon)
-            page.slug = input.slug
             page.visibility = input.visibility
+            page.updatedAt = new Date().toISOString()
+            return withSnapshot(page, store)
+        })
+    }
+
+    updatePageAddress(input: UpdatePageAddressInput): Promise<WikiPageDetailDto | null> {
+        return this.mutate(async (store) => {
+            const page = store.pages.find((entry) => entry.id === input.pageId && !entry.deletedAt)
+            if (!page) return null
+            assertSlugAvailable(store, input.slug, input.pageId)
+            page.slug = input.slug
             page.updatedAt = new Date().toISOString()
             return withSnapshot(page, store)
         })
@@ -678,6 +696,7 @@ function toSavepoint(revision: WikiSnapshotDto): WikiSavepointDto {
         id: revision.updatedAt,
         pageId: revision.pageId,
         createdBy: revision.updatedBy,
-        createdAt: revision.updatedAt
+        createdAt: revision.updatedAt,
+        markdown: revision.markdown
     }
 }

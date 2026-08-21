@@ -36,7 +36,7 @@ describe('wiki HTTP API', () => {
                 await api.request('/api/wiki/pages/welcome/meta', {
                     method: 'PATCH',
                     token: 'dev-viewer',
-                    body: { title: '차단', slug: 'welcome', visibility: 'public' }
+                    body: { title: 'ì°¨ë¨', slug: 'welcome', visibility: 'public' }
                 })
             ).status
         ).toBe(403)
@@ -52,14 +52,14 @@ describe('wiki HTTP API', () => {
         const viewerCreate = await api.request('/api/wiki/pages', {
             method: 'POST',
             token: 'dev-viewer',
-            body: { title: '차단', slug: 'blocked', visibility: 'public', markdown: '' }
+            body: { title: 'ì°¨ë¨', slug: 'blocked', visibility: 'public', markdown: '' }
         })
         expect(viewerCreate.status).toBe(403)
 
         const created = await api.request('/api/wiki/pages', {
             method: 'POST',
             token: 'dev-admin',
-            body: { title: '비공개', slug: 'private-page', visibility: 'private', markdown: '# 비공개' }
+            body: { title: 'ë¹ê³µê°', slug: 'private-page', visibility: 'private', markdown: '# ë¹ê³µê°' }
         })
         expect(created.status).toBe(201)
         const createdPage = (await created.json()) as { page: { id: string; snapshotUpdatedAt: string } }
@@ -74,14 +74,14 @@ describe('wiki HTTP API', () => {
         const missingVersion = await api.request(`/api/wiki/pages/${pageId}/snapshot`, {
             method: 'PUT',
             token: 'dev-writer',
-            body: { markdown: '# 버전 없는 변경' }
+            body: { markdown: '# ë²ì  ìë ë³ê²½' }
         })
         expect(missingVersion.status).toBe(400)
 
         const snapshot = await api.request(`/api/wiki/pages/${pageId}/snapshot`, {
             method: 'PUT',
             token: 'dev-writer',
-            body: { markdown: '# 변경', baseSnapshotUpdatedAt: createdPage.page.snapshotUpdatedAt }
+            body: { markdown: '# ë³ê²½', baseSnapshotUpdatedAt: createdPage.page.snapshotUpdatedAt }
         })
         expect(snapshot.status).toBe(200)
         const savedSnapshot = (await snapshot.json()) as { snapshot: { updatedAt: string } }
@@ -98,7 +98,7 @@ describe('wiki HTTP API', () => {
         const afterSavepoint = await api.request(`/api/wiki/pages/${pageId}/snapshot`, {
             method: 'PUT',
             token: 'dev-writer',
-            body: { markdown: '# 세이브포인트 이후', baseSnapshotUpdatedAt: savedSnapshot.snapshot.updatedAt }
+            body: { markdown: '# ì¸ì´ë¸í¬ì¸í¸ ì´í', baseSnapshotUpdatedAt: savedSnapshot.snapshot.updatedAt }
         })
         const afterSavepointBody = (await afterSavepoint.json()) as { snapshot: { updatedAt: string } }
         const restoredSavepoint = await api.request(
@@ -113,13 +113,13 @@ describe('wiki HTTP API', () => {
         const staleSnapshot = await api.request(`/api/wiki/pages/${pageId}/snapshot`, {
             method: 'PUT',
             token: 'dev-writer',
-            body: { markdown: '# 오래된 변경', baseSnapshotUpdatedAt: createdPage.page.snapshotUpdatedAt }
+            body: { markdown: '# ì¤ëë ë³ê²½', baseSnapshotUpdatedAt: createdPage.page.snapshotUpdatedAt }
         })
         expect(staleSnapshot.status).toBe(409)
         expect(((await staleSnapshot.json()) as { error: { code: string } }).error.code).toBe('snapshot_conflict')
         const exported = await api.request(`/api/wiki/pages/${pageId}/export.md`, { token: 'dev-writer' })
         expect(exported.status).toBe(200)
-        expect(await exported.text()).toBe('# 변경')
+        expect(await exported.text()).toBe('# ë³ê²½')
 
         expect((await api.request(`/api/wiki/pages/${pageId}`, { method: 'DELETE', token: 'dev-writer' })).status).toBe(
             403
@@ -141,12 +141,69 @@ describe('wiki HTTP API', () => {
         ).toBe(200)
     })
 
+    it('searches titles and document content in the requested priority order', async () => {
+        const api = await startApi()
+        const documents = [
+            { title: '검색 기능', slug: 'search-exact', markdown: '# 다른 내용' },
+            { title: '고급 검색 기능 안내', slug: 'search-title-contains', markdown: '# 다른 내용' },
+            { title: '본문 문구', slug: 'search-content-exact', markdown: '검색 기능 사용 방법' },
+            {
+                title: '본문 키워드',
+                slug: 'search-content-contains',
+                markdown: '검색을 먼저 실행합니다. 기능 설명입니다.'
+            },
+            { title: '숨겨진 검색 기능', slug: 'private-search', markdown: '검색 기능', visibility: 'private' as const }
+        ]
+
+        for (const document of documents) {
+            const response = await api.request('/api/wiki/pages', {
+                method: 'POST',
+                token: 'dev-admin',
+                body: { visibility: 'public', ...document }
+            })
+            expect(response.status).toBe(201)
+        }
+
+        const response = await api.request('/api/wiki/pages/search?q=' + encodeURIComponent('검색 기능'))
+        expect(response.status).toBe(200)
+        const body = (await response.json()) as { results: Array<{ page: { slug: string }; match: string }> }
+        expect(body.results.map(({ page, match }) => [page.slug, match])).toEqual([
+            ['search-exact', 'title-exact'],
+            ['search-title-contains', 'title-contains'],
+            ['search-content-exact', 'content-exact'],
+            ['search-content-contains', 'content-contains']
+        ])
+    })
+
+    it('keeps address changes separate from metadata autosaves', async () => {
+        const api = await startApi()
+        const renamed = await api.request('/api/wiki/pages/welcome/address', {
+            method: 'PATCH',
+            token: 'dev-admin',
+            body: { slug: 'renamed-welcome' }
+        })
+        expect(renamed.status).toBe(200)
+
+        const metadata = await api.request('/api/wiki/pages/welcome/meta', {
+            method: 'PATCH',
+            token: 'dev-admin',
+            body: { title: '새 대문', slug: 'welcome', visibility: 'public' }
+        })
+        expect(metadata.status).toBe(200)
+        expect(((await metadata.json()) as { page: { slug: string; title: string } }).page).toMatchObject({
+            slug: 'renamed-welcome',
+            title: '새 대문'
+        })
+        expect((await api.request('/api/wiki/pages/by-slug/welcome')).status).toBe(404)
+        expect((await api.request('/api/wiki/pages/by-slug/renamed-welcome')).status).toBe(200)
+    })
+
     it('maps duplicate slugs to conflict errors', async () => {
         const api = await startApi()
         const response = await api.request('/api/wiki/pages', {
             method: 'POST',
             token: 'dev-admin',
-            body: { title: '중복', slug: 'welcome', visibility: 'public', markdown: '' }
+            body: { title: 'ì¤ë³µ', slug: 'welcome', visibility: 'public', markdown: '' }
         })
         expect(response.status).toBe(409)
         expect(((await response.json()) as { error: { code: string } }).error.code).toBe('conflict')
@@ -181,16 +238,18 @@ describe('wiki HTTP API', () => {
         expect(((await purged.json()) as { purged: number }).purged).toBe(2)
     })
 
-    it('persists navigation preferences per authenticated user', async () => {
+    it('persists one shared navigation structure for every viewer', async () => {
         const api = await startApi()
-        expect((await api.request('/api/wiki/navigation/preferences')).status).toBe(401)
+        const initial = await api.request('/api/wiki/navigation/preferences')
+        expect(initial.status).toBe(200)
+        expect(((await initial.json()) as { initialized: boolean }).initialized).toBe(false)
 
         const preferences = {
             categories: [
                 {
                     id: 'guides',
-                    title: '안내',
-                    icon: '📚',
+                    title: 'ìë´',
+                    icon: 'ð',
                     documentSlug: 'category-guides',
                     pageSlugs: ['welcome'],
                     collapsed: true
@@ -233,19 +292,66 @@ describe('wiki HTTP API', () => {
         })
 
         const otherUser = await api.request('/api/wiki/navigation/preferences', { token: 'dev-writer' })
-        expect(((await otherUser.json()) as { initialized: boolean }).initialized).toBe(false)
+        expect(((await otherUser.json()) as { preferences: unknown }).preferences).toEqual({
+            ...preferences,
+            theme: 'dark'
+        })
+
+        const forbiddenSave = await api.request('/api/wiki/navigation/preferences', {
+            method: 'PUT',
+            token: 'dev-writer',
+            body: { preferences, baseVersion: 2 }
+        })
+        expect(forbiddenSave.status).toBe(403)
+    })
+
+    it('assembles a GIF from proxy-safe upload chunks', async () => {
+        const api = await startApi({ hiddenMediaDirectory: true })
+        const gif = Buffer.alloc(512 * 1024 + 7, 0x2a)
+        gif.write('GIF89a')
+        const authHeaders = { Authorization: 'Bearer dev-admin' }
+
+        const initialized = await fetch(`${api.baseUrl}/api/wiki/media/uploads`, {
+            method: 'POST',
+            headers: { ...authHeaders, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fileName: 'animation.GIF', mimeType: 'image/gif', size: gif.length })
+        })
+        expect(initialized.status).toBe(201)
+        const { uploadId } = (await initialized.json()) as { uploadId: string }
+
+        for (const [index, chunk] of [gif.subarray(0, 512 * 1024), gif.subarray(512 * 1024)].entries()) {
+            const uploaded = await fetch(`${api.baseUrl}/api/wiki/media/uploads/${uploadId}/chunks/${index}`, {
+                method: 'PUT',
+                headers: { ...authHeaders, 'Content-Type': 'application/octet-stream' },
+                body: chunk
+            })
+            expect(uploaded.status).toBe(204)
+        }
+
+        const completed = await fetch(`${api.baseUrl}/api/wiki/media/uploads/${uploadId}/complete`, {
+            method: 'POST',
+            headers: authHeaders
+        })
+        expect(completed.status).toBe(201)
+        const { url } = (await completed.json()) as { url: string }
+        expect(url).toMatch(/\.gif$/)
+
+        const served = await fetch(`${api.baseUrl}${url}`)
+        expect(served.status).toBe(200)
+        expect(served.headers.get('content-type')).toContain('image/gif')
+        expect(Buffer.from(await served.arrayBuffer())).toEqual(gif)
     })
 })
 
-async function startApi() {
+async function startApi(options: { hiddenMediaDirectory?: boolean } = {}) {
     const directory = await mkdtemp(join(tmpdir(), 'star-prison-wiki-api-'))
     const repositories = createFileRepositories({
         filePath: join(directory, 'wiki-store.json'),
         seed: {
             id: 'welcome',
             slug: 'welcome',
-            title: '대문',
-            icon: '📘',
+            title: 'ëë¬¸',
+            icon: 'ð',
             visibility: 'public',
             actorId: 'dev-admin',
             markdown: ''
@@ -260,6 +366,7 @@ async function startApi() {
         repositories,
         authService,
         authRouter: { transactionCookieName: 'test_oauth', forceSecureCookie: false },
+        mediaDirectory: join(directory, options.hiddenMediaDirectory ? '.local/media' : 'media'),
         logger: { error: () => undefined }
     })
     const server = await new Promise<ReturnType<typeof app.listen>>((resolve) => {
@@ -272,6 +379,7 @@ async function startApi() {
         await rm(directory, { recursive: true, force: true })
     })
     return {
+        baseUrl,
         request(path: string, options: { method?: string; token?: string; body?: unknown } = {}) {
             const headers = new Headers()
             if (options.token) headers.set('Authorization', `Bearer ${options.token}`)

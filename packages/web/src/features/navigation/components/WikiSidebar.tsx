@@ -1,18 +1,20 @@
 import { useEffect, useMemo, useState, type Dispatch, type DragEvent, type MouseEvent } from 'react'
-import { createPortal } from 'react-dom'
+import { createPortal, flushSync } from 'react-dom'
 import type { EmojiClickData } from 'emoji-picker-react'
 import {
     ChevronDown,
     Copy,
     Eraser,
     Link as LinkIcon,
+    Menu,
     Moon,
     PencilLine,
     Plus,
     SmilePlus,
     Star,
     Sun,
-    Trash2
+    Trash2,
+    X
 } from 'lucide-react'
 
 import type { WikiPageDto } from '@coconut-studio/wiki-contracts'
@@ -20,14 +22,14 @@ import type { WikiPageDto } from '@coconut-studio/wiki-contracts'
 import type { WikiBrandConfig } from '../../../app/wiki-brand'
 import { useAsyncAction } from '../../../shared/hooks/use-async-action'
 import { LazyEmojiPicker } from '../../editor/components/LazyEmojiPicker'
-import { categoryHref } from '../navigation-location'
+import { categoryHref, pageHref } from '../navigation-location'
 import type { NavigationAction, NavigationState } from '../navigation-reducer'
-import { createCategoryId, orderPagesBySlugs } from '../navigation-utils'
+import { createCategoryId, getPageCategoryRouteKey, getVerticalDropEdge, orderPagesBySlugs } from '../navigation-utils'
 import type { SidebarCategory, SidebarDragItem, SidebarDropTarget, SidebarMenu } from '../types'
 import { PageListItem } from './PageListItem'
 
 const MENU_WIDTH = 300
-const MENU_HEIGHT = 260
+const MENU_HEIGHT = 320
 const MENU_MARGIN = 8
 const CATEGORY_ICON_PICKER_WIDTH = 316
 const CATEGORY_ICON_PICKER_HEIGHT = 390
@@ -47,12 +49,14 @@ type WikiSidebarProps = {
     canEdit: boolean
     trashCount: number
     trashActive: boolean
-    onNavigate(slug: string): void
+    onNavigate(slug: string, categoryId?: string | null): void
     onNavigateCategory(categoryId: string): void
     onCreateCategory(category: SidebarCategory): Promise<SidebarCategory>
-    onCreatePage(title: string, categoryId: string | null): Promise<WikiPageDto>
+    onCreatePage(title: string, categoryId: string | null, navigateAfterCreate?: boolean): Promise<WikiPageDto>
     onRenamePage(page: WikiPageDto, title: string): Promise<void>
+    onRenamePageAddress(page: WikiPageDto, slug: string): Promise<void>
     onRenameCategory(category: SidebarCategory, title: string): Promise<void>
+    onRenameCategoryAddress(category: SidebarCategory, slug: string): Promise<void>
     onSetCategoryIcon(category: SidebarCategory, icon: string): Promise<void>
     onDuplicatePage(page: WikiPageDto): Promise<WikiPageDto>
     onTrashPage(page: WikiPageDto): Promise<void>
@@ -76,7 +80,9 @@ export function WikiSidebar(props: WikiSidebarProps) {
         onCreateCategory,
         onCreatePage,
         onRenamePage,
+        onRenamePageAddress,
         onRenameCategory,
+        onRenameCategoryAddress,
         onSetCategoryIcon,
         onDuplicatePage,
         onTrashPage,
@@ -89,6 +95,7 @@ export function WikiSidebar(props: WikiSidebarProps) {
     const [dropTarget, setDropTarget] = useState<SidebarDropTarget | null>(null)
     const [menu, setMenu] = useState<SidebarMenu>(null)
     const [categoryIconPicker, setCategoryIconPicker] = useState<CategoryIconPickerState | null>(null)
+    const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
     const { run: runAction, pending: actionPending, error: actionError, clearError } = useAsyncAction()
 
     const favoriteSlugs = useMemo(() => new Set(navigation.favoriteSlugs), [navigation.favoriteSlugs])
@@ -159,16 +166,21 @@ export function WikiSidebar(props: WikiSidebarProps) {
             collapsed: false,
             pageSlugs: []
         })
-        dispatch({ type: 'add-category', category })
+        flushSync(() => {
+            dispatch({ type: 'add-category', category })
+        })
         setCreateMode(null)
         setNewTitle('')
-        onNavigateCategory(category.id)
+        onNavigateCategory(category.documentSlug ?? category.id)
     }
 
     async function createPageInCategory(categoryId: string) {
         setMenu(null)
-        const created = await onCreatePage(DEFAULT_PAGE_TITLE, categoryId)
-        dispatch({ type: 'assign-page', slug: created.slug, categoryId })
+        const created = await onCreatePage(DEFAULT_PAGE_TITLE, categoryId, false)
+        flushSync(() => {
+            dispatch({ type: 'assign-page', slug: created.slug, categoryId })
+        })
+        navigateFromSidebar(created.slug, categoryId)
     }
 
     function openPageMenu(event: MouseEvent, slug: string) {
@@ -219,9 +231,24 @@ export function WikiSidebar(props: WikiSidebarProps) {
         )
     }
 
+    function categoryContainerDragOver(event: DragEvent<HTMLElement>, categoryId: string) {
+        if (dragItem?.type === 'category') {
+            event.preventDefault()
+            event.stopPropagation()
+            setDropTarget({
+                type: 'category',
+                categoryId,
+                edge: getDropEdge(event)
+            })
+            return
+        }
+        containerDragOver(event, categoryId)
+    }
+
     function containerDragOver(event: DragEvent<HTMLElement>, categoryId: string | null) {
-        if (dragItem?.type !== 'page' || event.target !== event.currentTarget) return
+        if (dragItem?.type !== 'page') return
         event.preventDefault()
+        if (categoryId !== null) event.stopPropagation()
         setDropTarget({ type: 'page-container', categoryId })
     }
 
@@ -241,24 +268,26 @@ export function WikiSidebar(props: WikiSidebarProps) {
     function drop(event: DragEvent<HTMLElement>) {
         event.preventDefault()
         event.stopPropagation()
-        if (dragItem?.type === 'category' && dropTarget?.type === 'category') {
-            dispatch({
-                type: 'move-category',
-                categoryId: dragItem.categoryId,
-                targetId: dropTarget.categoryId,
-                edge: dropTarget.edge
-            })
-        } else if (
-            dragItem?.type === 'page' &&
-            (dropTarget?.type === 'page' || dropTarget?.type === 'page-container')
-        ) {
-            dispatch({
-                type: 'move-page',
-                slug: dragItem.slug,
-                target: dropTarget,
-                pages
-            })
-        }
+        flushSync(() => {
+            if (dragItem?.type === 'category' && dropTarget?.type === 'category') {
+                dispatch({
+                    type: 'move-category',
+                    categoryId: dragItem.categoryId,
+                    targetId: dropTarget.categoryId,
+                    edge: dropTarget.edge
+                })
+            } else if (
+                dragItem?.type === 'page' &&
+                (dropTarget?.type === 'page' || dropTarget?.type === 'page-container')
+            ) {
+                dispatch({
+                    type: 'move-page',
+                    slug: dragItem.slug,
+                    target: dropTarget,
+                    pages
+                })
+            }
+        })
         finishDrag()
     }
 
@@ -288,6 +317,12 @@ export function WikiSidebar(props: WikiSidebarProps) {
         if (title && title !== page.title) await onRenamePage(page, title)
     }
 
+    async function renamePageAddress(page: WikiPageDto) {
+        setMenu(null)
+        const slug = promptForAddress('문서', page.slug)
+        if (slug) await onRenamePageAddress(page, slug)
+    }
+
     async function renameCategory(category: SidebarCategory) {
         setMenu(null)
         const title = window.prompt('카테고리 이름', category.title)?.trim()
@@ -295,6 +330,15 @@ export function WikiSidebar(props: WikiSidebarProps) {
             await onRenameCategory(category, title)
             dispatch({ type: 'rename-category', categoryId: category.id, title })
         }
+    }
+
+    async function renameCategoryAddress(category: SidebarCategory) {
+        setMenu(null)
+        const currentSlug = category.documentSlug
+        if (!currentSlug) return
+
+        const slug = promptForAddress('카테고리', currentSlug)
+        if (slug) await onRenameCategoryAddress(category, slug)
     }
 
     function openCategoryIconPicker(category: SidebarCategory) {
@@ -311,11 +355,6 @@ export function WikiSidebar(props: WikiSidebarProps) {
         const category = navigation.categories.find((entry) => entry.id === categoryIconPicker.categoryId)
         if (!category) return
         await onSetCategoryIcon(category, icon)
-        dispatch({
-            type: 'set-category-icon',
-            categoryId: categoryIconPicker.categoryId,
-            icon
-        })
         setCategoryIconPicker(null)
     }
 
@@ -349,21 +388,65 @@ export function WikiSidebar(props: WikiSidebarProps) {
             ? navigation.categories.find((category) => category.id === menu.categoryId)
             : undefined
 
+    function navigateFromSidebar(slug: string, nextCategoryId: string | null = null) {
+        setMobileMenuOpen(false)
+        onNavigate(slug, nextCategoryId)
+    }
+
+    function navigateCategoryFromSidebar(nextCategoryId: string) {
+        setMobileMenuOpen(false)
+        onNavigateCategory(nextCategoryId)
+    }
+
+    function openTrashFromSidebar() {
+        setMobileMenuOpen(false)
+        onOpenTrash()
+    }
+
+    function navigateHomeCategory() {
+        const homeCategory = navigation.categories.find((category) => category.title.trim() === '대문')
+        setMobileMenuOpen(false)
+        if (homeCategory) {
+            onNavigateCategory(homeCategory.documentSlug ?? homeCategory.id)
+            return
+        }
+        onNavigate(brand.defaultSlug, null)
+    }
+
     return (
-        <aside className="wiki-sidebar" aria-label="위키 문서" aria-busy={actionPending}>
+        <aside
+            className={`wiki-sidebar ${mobileMenuOpen ? 'mobile-menu-open' : ''}`}
+            aria-label="위키 문서"
+            aria-busy={actionPending}
+        >
             <div className="brand">
-                <span className="brand-logo">
+                <button
+                    type="button"
+                    className="brand-logo"
+                    onClick={navigateHomeCategory}
+                    aria-label="대문 카테고리로 이동"
+                >
                     <img src={brand.logoUrl} alt={brand.logoAlt} />
-                </span>
+                </button>
                 <span className="brand-copy">
                     <strong className="brand-text">{brand.brandLabel}</strong>
                 </span>
+                <button
+                    type="button"
+                    className="mobile-navigation-toggle"
+                    aria-expanded={mobileMenuOpen}
+                    aria-controls="wiki-navigation-list"
+                    aria-label={mobileMenuOpen ? '문서 메뉴 닫기' : '문서 메뉴 열기'}
+                    onClick={() => setMobileMenuOpen((open) => !open)}
+                >
+                    {mobileMenuOpen ? <X aria-hidden="true" size={22} /> : <Menu aria-hidden="true" size={22} />}
+                </button>
             </div>
 
             {actionError ? (
-                <div className="local-draft-banner" role="alert">
+                <div className="wiki-alert-banner" role="alert">
                     <span>{actionError}</span>
-                    <div className="local-draft-actions">
+                    <div className="wiki-alert-actions">
                         <button type="button" onClick={clearError}>
                             닫기
                         </button>
@@ -372,6 +455,7 @@ export function WikiSidebar(props: WikiSidebarProps) {
             ) : null}
 
             <nav
+                id="wiki-navigation-list"
                 className="page-list"
                 aria-label="문서 목록"
                 onDragOver={(event) => containerDragOver(event, null)}
@@ -405,7 +489,7 @@ export function WikiSidebar(props: WikiSidebarProps) {
                         <div
                             className={categoryClass}
                             key={category.id}
-                            onDragOver={(event) => containerDragOver(event, category.id)}
+                            onDragOver={(event) => categoryContainerDragOver(event, category.id)}
                             onDrop={drop}
                         >
                             <button
@@ -421,7 +505,13 @@ export function WikiSidebar(props: WikiSidebarProps) {
                                 onDragEnd={finishDrag}
                                 onDragOver={(event) => categoryDragOver(event, category.id)}
                                 onDrop={drop}
-                                onClick={() => onNavigateCategory(category.id)}
+                                onClick={() => navigateCategoryFromSidebar(category.documentSlug ?? category.id)}
+                                onDoubleClick={(event) => {
+                                    if (!canEdit) return
+                                    event.preventDefault()
+                                    event.stopPropagation()
+                                    runAction(() => renameCategory(category))
+                                }}
                                 onContextMenu={(event) => openCategoryMenu(event, category.id)}
                                 aria-expanded={!category.collapsed}
                             >
@@ -475,7 +565,8 @@ export function WikiSidebar(props: WikiSidebarProps) {
                                           categoryId={category.id}
                                           dragItem={dragItem}
                                           dropTarget={dropTarget}
-                                          onNavigate={onNavigate}
+                                          onNavigate={navigateFromSidebar}
+                                          onRename={() => runAction(() => renamePage(page))}
                                           onContextMenu={openPageMenu}
                                           onDragStart={startDrag}
                                           onDragEnd={finishDrag}
@@ -498,7 +589,8 @@ export function WikiSidebar(props: WikiSidebarProps) {
                         categoryId={null}
                         dragItem={dragItem}
                         dropTarget={dropTarget}
-                        onNavigate={onNavigate}
+                        onNavigate={navigateFromSidebar}
+                        onRename={() => runAction(() => renamePage(page))}
                         onContextMenu={openPageMenu}
                         onDragStart={startDrag}
                         onDragEnd={finishDrag}
@@ -564,7 +656,7 @@ export function WikiSidebar(props: WikiSidebarProps) {
                 <button
                     type="button"
                     className={`sidebar-trash ${trashActive ? 'active' : ''} ${dropTarget?.type === 'trash' ? 'drop-target' : ''}`}
-                    onClick={onOpenTrash}
+                    onClick={openTrashFromSidebar}
                     onDragOver={trashDragOver}
                     onDragLeave={trashDragLeave}
                     onDrop={dropOnTrash}
@@ -611,7 +703,10 @@ export function WikiSidebar(props: WikiSidebarProps) {
                                       onClick={() => {
                                           runAction(() =>
                                               navigator.clipboard.writeText(
-                                                  `${window.location.origin}/wiki/${encodeURIComponent(menuPage.slug)}`
+                                                  `${window.location.origin}${pageHref(
+                                                      menuPage.slug,
+                                                      getPageCategoryRouteKey(navigation.categories, menuPage.slug)
+                                                  )}`
                                               )
                                           )
                                           setMenu(null)
@@ -641,6 +736,14 @@ export function WikiSidebar(props: WikiSidebarProps) {
                                           <button
                                               type="button"
                                               role="menuitem"
+                                              onClick={() => runAction(() => renamePageAddress(menuPage))}
+                                          >
+                                              <LinkIcon aria-hidden="true" size={16} />
+                                              <span>주소명 바꾸기</span>
+                                          </button>
+                                          <button
+                                              type="button"
+                                              role="menuitem"
                                               onClick={() => runAction(() => trashPage(menuPage))}
                                           >
                                               <Trash2 aria-hidden="true" size={16} />
@@ -657,7 +760,7 @@ export function WikiSidebar(props: WikiSidebarProps) {
                                       onClick={() => {
                                           runAction(() =>
                                               navigator.clipboard.writeText(
-                                                  `${window.location.origin}${categoryHref(menuCategory.id)}`
+                                                  `${window.location.origin}${categoryHref(menuCategory.documentSlug ?? menuCategory.id)}`
                                               )
                                           )
                                           setMenu(null)
@@ -685,6 +788,16 @@ export function WikiSidebar(props: WikiSidebarProps) {
                                               <PencilLine aria-hidden="true" size={16} />
                                               <span>이름 바꾸기</span>
                                           </button>
+                                          {menuCategory.documentSlug ? (
+                                              <button
+                                                  type="button"
+                                                  role="menuitem"
+                                                  onClick={() => runAction(() => renameCategoryAddress(menuCategory))}
+                                              >
+                                                  <LinkIcon aria-hidden="true" size={16} />
+                                                  <span>주소명 바꾸기</span>
+                                              </button>
+                                          ) : null}
                                           <div className="sidebar-menu-separator" role="separator" />
                                           <button
                                               type="button"
@@ -742,9 +855,20 @@ export function WikiSidebar(props: WikiSidebarProps) {
 
 function getDropEdge(event: DragEvent<HTMLElement>): 'before' | 'after' {
     const rect = event.currentTarget.getBoundingClientRect()
-    const pointer = rect.width > rect.height * 2 ? event.clientX - rect.left : event.clientY - rect.top
-    const size = rect.width > rect.height * 2 ? rect.width : rect.height
-    return pointer < size / 2 ? 'before' : 'after'
+    return getVerticalDropEdge(event.clientY, rect.top, rect.height)
+}
+
+function promptForAddress(label: string, currentSlug: string): string | null {
+    const input = window.prompt(`${label} 주소명 (영문 소문자, 숫자, 하이픈)`, currentSlug)
+    if (input === null) return null
+
+    const slug = input.trim().toLowerCase().replace(/\s+/g, '-')
+    if (!slug || slug === currentSlug) return null
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) {
+        window.alert('주소명은 영문 소문자, 숫자, 하이픈만 사용할 수 있습니다.')
+        return null
+    }
+    return slug
 }
 
 function clampMenu(x: number, y: number): { x: number; y: number } {

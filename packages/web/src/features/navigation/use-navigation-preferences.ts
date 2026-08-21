@@ -14,7 +14,8 @@ export type NavigationPreferencesPersistence = {
 export function useNavigationPreferences(
     store: NavigationPreferencesStore,
     pages: WikiPageDto[],
-    persistence?: NavigationPreferencesPersistence
+    persistence?: NavigationPreferencesPersistence,
+    pageIndexReady = true
 ) {
     const [state, dispatch] = useReducer(navigationReducer, undefined, () => store.load())
     const [persistenceReady, setPersistenceReady] = useState(!persistence)
@@ -62,8 +63,8 @@ export function useNavigationPreferences(
     })
 
     useEffect(() => {
-        dispatch({ type: 'reconcile', pages })
-    }, [pages])
+        if (pageIndexReady) dispatch({ type: 'reconcile', pages })
+    }, [pageIndexReady, pages])
 
     useEffect(() => {
         if (persistence ? persistenceState !== 'error' : hydratedPersistenceKey.current !== null) return
@@ -100,7 +101,7 @@ export function useNavigationPreferences(
             setPersistenceState('local')
             const localPreferences = store.load()
             dispatch({ type: 'hydrate', preferences: localPreferences })
-            dispatch({ type: 'reconcile', pages: latestPages.current })
+            if (pageIndexReady) dispatch({ type: 'reconcile', pages: latestPages.current })
             setPersistenceReady(true)
             return
         }
@@ -109,7 +110,7 @@ export function useNavigationPreferences(
         setPersistenceState('loading')
         const localFallback = store.load()
         dispatch({ type: 'hydrate', preferences: localFallback })
-        dispatch({ type: 'reconcile', pages: latestPages.current })
+        if (pageIndexReady) dispatch({ type: 'reconcile', pages: latestPages.current })
         let active = true
         void persistence
             .load()
@@ -118,7 +119,7 @@ export function useNavigationPreferences(
                 const offline = offlinePersistenceKey.current === persistence.key ? offlinePreferences.current : null
                 const nextPreferences = offline ?? (initialized ? toNavigationPreferences(preferences) : store.load())
                 dispatch({ type: 'hydrate', preferences: nextPreferences })
-                dispatch({ type: 'reconcile', pages: latestPages.current })
+                if (pageIndexReady) dispatch({ type: 'reconcile', pages: latestPages.current })
                 hydratedPersistenceKey.current = persistence.key
                 if (offline) {
                     pendingSave.current = offline
@@ -141,7 +142,7 @@ export function useNavigationPreferences(
         return () => {
             active = false
         }
-    }, [persistence, retryGeneration, store])
+    }, [pageIndexReady, persistence, retryGeneration, store])
 
     useEffect(() => {
         if (!persistence || !persistenceReady || hydratedPersistenceKey.current !== persistence.key) return

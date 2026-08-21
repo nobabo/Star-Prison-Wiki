@@ -8,10 +8,33 @@ export const starPrisonBrand: WikiBrandConfig = {
     defaultSlug: 'welcome',
     apiBasePath: import.meta.env.VITE_WIKI_API_BASE_PATH ?? '/api/wiki',
     collaborationUrl(pageId) {
-        const explicitBase = import.meta.env.VITE_WIKI_SYNC_URL?.replace(/\/$/, '')
-        if (explicitBase) return `${explicitBase}/collab/wiki/${encodeURIComponent(pageId)}`
-        const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-        const port = import.meta.env.VITE_WIKI_SYNC_PORT ?? '2234'
-        return `${protocol}://${window.location.hostname}:${port}/collab/wiki/${encodeURIComponent(pageId)}`
+        return buildStarPrisonCollaborationUrl(
+            pageId,
+            window.location,
+            import.meta.env.VITE_WIKI_SYNC_URL,
+            import.meta.env.VITE_WIKI_SYNC_PORT
+        )
     }
+}
+
+type CollaborationLocation = Pick<Location, 'protocol' | 'host' | 'hostname'>
+
+export function buildStarPrisonCollaborationUrl(
+    pageId: string,
+    location: CollaborationLocation,
+    explicitBase?: string,
+    syncPort = '2234'
+): string {
+    const path = `/collab/wiki/${encodeURIComponent(pageId)}`
+    const normalizedBase = explicitBase?.replace(/\/$/, '')
+
+    if (normalizedBase) {
+        return `${normalizedBase}${path}`
+    }
+
+    if (location.protocol === 'https:') {
+        return `wss://${location.host}${path}`
+    }
+
+    return `ws://${location.hostname}:${syncPort}${path}`
 }

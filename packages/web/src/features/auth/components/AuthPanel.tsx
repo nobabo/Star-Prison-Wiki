@@ -32,12 +32,22 @@ export function AuthPanel({ status, loading, onLogin, onLogout }: AuthPanelProps
         return (
             <button
                 type="button"
-                className={`auth-panel account-button ${isAdmin ? 'admin' : ''}`}
+                className={`auth-panel account-button ${isAdmin ? 'admin' : ''} ${user.picture ? 'has-avatar' : ''}`}
                 onClick={onLogout}
                 title={`${user.name} · 로그아웃`}
                 aria-label={`${user.name} 계정 로그아웃`}
             >
-                <LogOut aria-hidden="true" size={18} />
+                {user.picture ? (
+                    <img
+                        className="account-avatar"
+                        src={user.picture}
+                        alt=""
+                        aria-hidden="true"
+                        referrerPolicy="no-referrer"
+                    />
+                ) : (
+                    <LogOut aria-hidden="true" size={18} />
+                )}
             </button>
         )
     }

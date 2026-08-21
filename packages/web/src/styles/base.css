@@ -10,6 +10,7 @@ body,
 
 body {
     margin: 0;
+    overflow-x: hidden;
     background: var(--wiki-bg);
     color: var(--wiki-ink);
     font-family: var(--wiki-font-sans);

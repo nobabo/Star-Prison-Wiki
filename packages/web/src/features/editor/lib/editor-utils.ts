@@ -40,23 +40,19 @@ export function saveLabel(saveState: SaveState): string {
         idle: '대기',
         saving: '저장 중',
         saved: '저장됨',
-        local: '로컬 저장',
         error: '저장 실패'
     }[saveState]
 }
 
-export function formatDraftTime(value: string): string {
-    const date = new Date(value)
-    if (Number.isNaN(date.getTime())) return '이전'
-    return new Intl.DateTimeFormat('ko-KR', {
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-    }).format(date)
+export function normalizePageIcon(value: string): string | null {
+    const icon = firstGrapheme(value.trim())
+    return icon || null
 }
 
-export function normalizePageIcon(value: string): string | null {
-    const icon = Array.from(value.trim()).slice(0, 2).join('')
-    return icon || null
+function firstGrapheme(value: string): string {
+    if (!value) return ''
+    return (
+        new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(value)[Symbol.iterator]().next().value
+            ?.segment ?? ''
+    )
 }

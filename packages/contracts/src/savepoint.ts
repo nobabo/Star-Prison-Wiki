@@ -3,6 +3,7 @@ export type WikiSavepointDto = {
     pageId: string
     createdBy: string
     createdAt: string
+    markdown?: string
 }
 
 export type WikiSavepointListResponse = {

@@ -108,7 +108,7 @@
     --wiki-highlight-control: #0f1011;
     --wiki-highlight-control-soft: #191b1c;
     --wiki-highlight-radius: 2px;
-    --wiki-highlight-shadow: 6px 6px 0 rgba(230, 98, 154, 0.16);
+    --wiki-highlight-shadow: 6px 6px 0 rgba(85, 34, 58, 0.32);
     --wiki-sidebar-category-gap: 16px;
     --wiki-sidebar-child-indent: 18px;
     --wiki-sidebar-font-size: 15px;
@@ -223,15 +223,12 @@
 }
 
 body {
-    background:
-        radial-gradient(circle at 14% 8%, color-mix(in srgb, #343638 16%, transparent), transparent 34%),
-        radial-gradient(circle at 88% 18%, color-mix(in srgb, #2b2d2f 10%, transparent), transparent 38%),
-        linear-gradient(
-            145deg,
-            color-mix(in srgb, #252729 10%, var(--wiki-bg)),
-            color-mix(in srgb, #191b1c 8%, var(--wiki-bg)) 46%,
-            var(--wiki-bg-2)
-        );
+    background: linear-gradient(
+        145deg,
+        color-mix(in srgb, var(--wiki-accent) 6%, var(--wiki-bg)),
+        color-mix(in srgb, #7898c6 5%, var(--wiki-bg)) 50%,
+        var(--wiki-bg-2)
+    );
     background-attachment: fixed;
 }
 
@@ -335,8 +332,4 @@ html[data-theme='light']:root body {
 
 html[data-theme='light'] .wiki-sidebar {
     background: transparent;
-}
-
-html[data-theme='light'] .editor-title-input {
-    color: var(--wiki-accent);
 }

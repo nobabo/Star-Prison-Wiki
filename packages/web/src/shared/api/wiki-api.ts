@@ -1,6 +1,7 @@
 import type {
     CreateWikiSavepointResponse,
     CreateWikiPageRequest,
+    UpdateWikiPageAddressRequest,
     UpdateWikiPageMetaRequest,
     WikiAuthStatusDto,
     WikiNavigationPreferencesResponse,
@@ -8,6 +9,7 @@ import type {
     WikiPageDetailDto,
     WikiPageDto,
     WikiPageListResponse,
+    WikiPageSearchResponse,
     WikiPageResponse,
     WikiSavepointListResponse,
     WikiSnapshotDto
@@ -21,6 +23,18 @@ export type ApiClient = {
 
 export type PageResponse = WikiPageResponse
 export type PageListResponse = WikiPageListResponse
+
+const IMAGE_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif'])
+const IMAGE_MIME_BY_EXTENSION: Readonly<Record<string, string>> = {
+    png: 'image/png',
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    gif: 'image/gif',
+    webp: 'image/webp',
+    avif: 'image/avif'
+}
+const IMAGE_UPLOAD_CHUNK_BYTES = 512 * 1024
+const MAX_IMAGE_UPLOAD_BYTES = 100 * 1024 * 1024
 
 export class WikiApiError extends Error {
     constructor(
@@ -37,6 +51,8 @@ export const fetchAuthMe = (client: ApiClient) => request<WikiAuthStatusDto>(cli
 export const fetchPageBySlug = (client: ApiClient, slug: string) =>
     request<WikiPageResponse>(client, `/pages/by-slug/${encodeURIComponent(slug)}`)
 export const fetchPages = (client: ApiClient) => request<WikiPageListResponse>(client, '/pages')
+export const searchWikiPages = (client: ApiClient, query: string, signal?: AbortSignal) =>
+    request<WikiPageSearchResponse>(client, `/pages/search?q=${encodeURIComponent(query)}`, { signal })
 export const fetchTrashedPages = (client: ApiClient) => request<WikiPageListResponse>(client, '/trash')
 export const fetchNavigationPreferences = (client: ApiClient) =>
     request<WikiNavigationPreferencesResponse>(client, '/navigation/preferences')
@@ -62,6 +78,17 @@ export function updatePageMeta(
     input: UpdateWikiPageMetaRequest
 ): Promise<{ page: WikiPageDetailDto }> {
     return request(client, `/pages/${encodeURIComponent(pageId)}/meta`, {
+        method: 'PATCH',
+        body: JSON.stringify(input)
+    })
+}
+
+export function updatePageAddress(
+    client: ApiClient,
+    pageId: string,
+    input: UpdateWikiPageAddressRequest
+): Promise<{ page: WikiPageDetailDto }> {
+    return request(client, `/pages/${encodeURIComponent(pageId)}/address`, {
         method: 'PATCH',
         body: JSON.stringify(input)
     })
@@ -103,6 +130,50 @@ export function restoreWikiSavepoint(
             body: JSON.stringify({ baseSnapshotUpdatedAt })
         }
     )
+}
+
+export async function uploadWikiImage(client: ApiClient, file: File): Promise<{ url: string }> {
+    const mimeType = getImageUploadMimeType(file)
+    if (!mimeType) throw new WikiApiError(400, 'unsupported_image_type', 'Unsupported image type')
+    if (file.size > MAX_IMAGE_UPLOAD_BYTES) {
+        throw new WikiApiError(413, 'image_too_large', 'Image files must be 100MB or smaller')
+    }
+
+    const upload = await request<{ uploadId: string }>(client, '/media/uploads', {
+        method: 'POST',
+        body: JSON.stringify({ fileName: file.name, mimeType, size: file.size })
+    })
+
+    try {
+        for (let index = 0, offset = 0; offset < file.size; index += 1, offset += IMAGE_UPLOAD_CHUNK_BYTES) {
+            const headers = authHeaders(client)
+            headers.set('Content-Type', 'application/octet-stream')
+            const chunk = file.slice(offset, Math.min(offset + IMAGE_UPLOAD_CHUNK_BYTES, file.size))
+            const response = await fetch(`${basePath(client)}/media/uploads/${upload.uploadId}/chunks/${index}`, {
+                method: 'PUT',
+                headers,
+                body: chunk
+            })
+            if (!response.ok) throw await toApiError(response)
+        }
+        return await request<{ url: string }>(client, `/media/uploads/${upload.uploadId}/complete`, {
+            method: 'POST'
+        })
+    } catch (error) {
+        void fetch(`${basePath(client)}/media/uploads/${upload.uploadId}`, {
+            method: 'DELETE',
+            headers: authHeaders(client)
+        })
+        throw error
+    }
+}
+
+export function getImageUploadMimeType(file: Pick<File, 'name' | 'type'>): string | null {
+    const declaredType = file.type.trim().toLowerCase()
+    if (IMAGE_MIME_TYPES.has(declaredType)) return declaredType
+
+    const extension = /\.([^.]+)$/.exec(file.name.trim().toLowerCase())?.[1]
+    return extension ? (IMAGE_MIME_BY_EXTENSION[extension] ?? null) : null
 }
 
 export const trashWikiPage = (client: ApiClient, pageId: string) =>

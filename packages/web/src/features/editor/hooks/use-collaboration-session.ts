@@ -7,33 +7,47 @@ import { useCategoryPageCreateControl } from './use-category-page-create-control
 
 type CollaborationSessionInput = {
     document: Y.Doc
+    editable: boolean
     pageId: string
     token: string
     url(pageId: string): string
 }
 
-export function useCollaborationSession({ document, pageId, token, url }: CollaborationSessionInput): boolean {
+export type CollaborationSession = {
+    provider: HocuspocusProvider | null
+    synced: boolean
+}
+
+export function useCollaborationSession({
+    document,
+    editable,
+    pageId,
+    token,
+    url
+}: CollaborationSessionInput): CollaborationSession {
     const [synced, setSynced] = useState(false)
-    useCardInsertControl(pageId)
-    useCategoryPageCreateControl(pageId)
+    const [provider, setProvider] = useState<HocuspocusProvider | null>(null)
+    useCardInsertControl(pageId, editable)
+    useCategoryPageCreateControl(pageId, editable)
 
     useEffect(() => {
         setSynced(false)
-        const provider = new HocuspocusProvider({
+        const nextProvider = new HocuspocusProvider({
             url: url(pageId),
             name: `wiki:${pageId}`,
             document,
             token,
             flushDelay: 100,
             onSynced: ({ state }) => setSynced(state),
-            onDisconnect: () => setSynced(false)
+            onAuthenticationFailed: () => setSynced(!editable),
+            onDisconnect: () => setSynced(!editable)
         } as ConstructorParameters<typeof HocuspocusProvider>[0] & { flushDelay: number })
+        setProvider(nextProvider)
 
         return () => {
-            provider.destroy()
-            document.destroy()
+            nextProvider.destroy()
         }
-    }, [document, pageId, token, url])
+    }, [document, editable, pageId, token, url])
 
-    return synced
+    return { provider, synced }
 }

@@ -41,12 +41,16 @@ export function readServerConfig(): StarPrisonServerConfig {
                   adminEmails: readDevAdminEmails()
               }
           })
+    const mediaDirectory = resolve(
+        optionalEnv('WIKI_MEDIA_DIR') ?? fileURLToPath(new URL('../.local/media', import.meta.url))
+    )
 
     return {
         name: 'star-prison-wiki',
         apiPort,
         collaborationPort,
         repositories,
+        mediaDirectory,
         auth,
         logger,
         forceSecureCookie: production || process.env.WIKI_COOKIE_SECURE === '1'

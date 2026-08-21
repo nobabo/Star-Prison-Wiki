@@ -20,7 +20,7 @@ export function createSavepointRouter(repositories: WikiRepositories, authServic
     router.post('/pages/:pageId/savepoints', async (request, response) => {
         const pageId = String(request.params.pageId)
         const actor = await pages.requirePageWriter(pageId, await auth(request))
-        const savepoint = await repositories.pages.createSavepoint({ pageId, actorId: actor.userId })
+        const savepoint = await repositories.pages.createSavepoint({ pageId, actorId: actorDisplayName(actor) })
         response.status(savepoint ? 201 : 200).json({ savepoint })
     })
 
@@ -32,7 +32,7 @@ export function createSavepointRouter(repositories: WikiRepositories, authServic
             const snapshot = await repositories.pages.restoreSavepoint({
                 pageId,
                 savepointId: String(request.params.savepointId),
-                actorId: actor.userId,
+                actorId: actorDisplayName(actor),
                 expectedUpdatedAt: requireText(body.baseSnapshotUpdatedAt, 'baseSnapshotUpdatedAt')
             })
             if (!snapshot) throw notFound('Wiki savepoint was not found')
@@ -46,6 +46,10 @@ export function createSavepointRouter(repositories: WikiRepositories, authServic
     })
 
     return router
+}
+
+function actorDisplayName(actor: { userId: string; name: string; email?: string }): string {
+    return `${actor.name} (${actor.email ?? actor.userId})`
 }
 
 function parseLimit(value: unknown): number {

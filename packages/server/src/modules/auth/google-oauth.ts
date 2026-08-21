@@ -103,12 +103,14 @@ export class GoogleOAuthService {
         }
         if (typeof payload.sub !== 'string') return null
         const email = typeof payload.email === 'string' ? payload.email.toLowerCase() : undefined
+        const picture = typeof payload.picture === 'string' ? payload.picture : undefined
         if (!email) return null
         const isAdmin = await this.adminAccounts.isAdminEmail(email)
         return {
             userId: payload.sub,
             name: typeof payload.name === 'string' ? payload.name : payload.sub,
             email,
+            ...(picture ? { picture } : {}),
             roles: googleRolesForAdminStatus(isAdmin)
         }
     }
@@ -151,7 +153,12 @@ export class GoogleOAuthService {
     }
 
     private async signSession(auth: AuthContext): Promise<string> {
-        return new SignJWT({ name: auth.name, email: auth.email, roles: auth.roles })
+        return new SignJWT({
+            name: auth.name,
+            email: auth.email,
+            ...(auth.picture ? { picture: auth.picture } : {}),
+            roles: auth.roles
+        })
             .setProtectedHeader({ alg: 'HS256' })
             .setIssuer(APP_SESSION_ISSUER)
             .setAudience(APP_SESSION_AUDIENCE)
@@ -225,6 +232,7 @@ export function googlePayloadToAuth(
 ): AuthContext {
     const sub = typeof payload.sub === 'string' ? payload.sub : undefined
     const email = typeof payload.email === 'string' ? payload.email.toLowerCase() : undefined
+    const picture = typeof payload.picture === 'string' ? payload.picture : undefined
     const emailVerified = payload.email_verified === true || payload.email_verified === 'true'
     if (!sub || !email || !emailVerified) throw new Error('forbidden')
     const hostedDomain = typeof payload.hd === 'string' ? payload.hd.toLowerCase() : undefined
@@ -234,6 +242,7 @@ export function googlePayloadToAuth(
         userId: `google:${sub}`,
         name: typeof payload.name === 'string' ? payload.name : email,
         email,
+        ...(picture ? { picture } : {}),
         roles: googleRolesForAdminStatus(false)
     }
 }

@@ -1,3 +1,6 @@
 export * from './color-directive'
 export * from './highlight-block'
+export * from './image-metadata'
+export * from './quote-block'
+export * from './table-metadata'
 export * from './render'

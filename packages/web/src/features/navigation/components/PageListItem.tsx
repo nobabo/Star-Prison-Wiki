@@ -13,7 +13,8 @@ type PageListItemProps = {
     categoryId: string | null
     dragItem: SidebarDragItem | null
     dropTarget: SidebarDropTarget | null
-    onNavigate(slug: string): void
+    onNavigate(slug: string, categoryId: string | null): void
+    onRename(): void
     onContextMenu(event: MouseEvent, slug: string): void
     onDragStart(event: DragEvent<HTMLElement>, item: SidebarDragItem): void
     onDragEnd(): void
@@ -31,6 +32,7 @@ export function PageListItem(props: PageListItemProps) {
         dragItem,
         dropTarget,
         onNavigate,
+        onRename,
         onContextMenu,
         onDragStart,
         onDragEnd,
@@ -58,7 +60,13 @@ export function PageListItem(props: PageListItemProps) {
             onDragEnd={onDragEnd}
             onDragOver={(event) => onDragOver(event, categoryId, page.slug)}
             onDrop={onDrop}
-            onClick={() => onNavigate(page.slug)}
+            onClick={() => onNavigate(page.slug, categoryId)}
+            onDoubleClick={(event) => {
+                if (!editable) return
+                event.preventDefault()
+                event.stopPropagation()
+                onRename()
+            }}
             onContextMenu={(event) => onContextMenu(event, page.slug)}
         >
             <span className="page-list-doc-icon" aria-hidden="true">

@@ -4,6 +4,7 @@ import { Eraser, SmilePlus } from 'lucide-react'
 import { LazyEmojiPicker } from './LazyEmojiPicker'
 
 type EditorHeaderProps = {
+    editable: boolean
     title: string
     icon: string
     showIconPicker: boolean
@@ -14,21 +15,27 @@ type EditorHeaderProps = {
 }
 
 export function EditorHeader(props: EditorHeaderProps) {
-    const { title, icon, showIconPicker, onTitleChange, onToggleIconPicker, onSelectIcon, onSelectEmoji } = props
+    const { editable, title, icon, showIconPicker, onTitleChange, onToggleIconPicker, onSelectIcon, onSelectEmoji } =
+        props
     return (
-        <div className="editor-title-row">
+        <div
+            className="editor-title-row"
+            style={{ width: `clamp(30%, ${Math.max(1, Array.from(title || '제목').length) + 2}em, 100%)` }}
+        >
             <div className="editor-icon-picker">
                 <button
                     type="button"
                     className={`editor-icon-button ${icon ? 'has-icon' : ''}`}
-                    onClick={onToggleIconPicker}
-                    title="문서 이모지 선택"
-                    aria-label="문서 이모지 선택"
+                    onClick={editable ? onToggleIconPicker : undefined}
+                    title={editable ? '문서 이모지 선택' : undefined}
+                    aria-label={editable ? '문서 이모지 선택' : '문서 이모지'}
                     aria-expanded={showIconPicker}
+                    aria-disabled={!editable}
+                    tabIndex={editable ? 0 : -1}
                 >
                     {icon ? <span aria-hidden="true">{icon}</span> : <SmilePlus aria-hidden="true" size={24} />}
                 </button>
-                {showIconPicker ? (
+                {editable && showIconPicker ? (
                     <div className="editor-icon-popover" role="dialog" aria-label="문서 이모지">
                         <div className="editor-emoji-picker editor-emoji-picker-compact">
                             <LazyEmojiPicker
@@ -58,6 +65,7 @@ export function EditorHeader(props: EditorHeaderProps) {
                 onChange={(event) => onTitleChange(event.target.value)}
                 placeholder="제목"
                 aria-label="문서 제목"
+                readOnly={!editable}
                 spellCheck={false}
             />
         </div>

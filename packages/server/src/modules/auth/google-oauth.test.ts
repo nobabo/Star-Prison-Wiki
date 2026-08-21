@@ -12,13 +12,20 @@ describe('Google OAuth roles', () => {
     it('allows verified Google users and separates viewer and admin roles by email', () => {
         expect(
             googlePayloadToAuth(
-                { sub: 'viewer-id', email: 'viewer@example.com', email_verified: true, name: 'Viewer' },
+                {
+                    sub: 'viewer-id',
+                    email: 'viewer@example.com',
+                    email_verified: true,
+                    name: 'Viewer',
+                    picture: 'https://lh3.googleusercontent.com/viewer-photo'
+                },
                 googleConfig
             )
         ).toEqual({
             userId: 'google:viewer-id',
             name: 'Viewer',
             email: 'viewer@example.com',
+            picture: 'https://lh3.googleusercontent.com/viewer-photo',
             roles: ['wiki:viewer']
         })
         expect(googleRolesForAdminStatus(true)).toEqual(['wiki:admin'])
@@ -48,7 +55,11 @@ describe('Google OAuth roles', () => {
 
     it('resolves an existing session role from the admin account repository', async () => {
         const secret = 'test-session-secret'
-        const token = await new SignJWT({ name: '관리자', email: 'admin@example.com' })
+        const token = await new SignJWT({
+            name: '관리자',
+            email: 'admin@example.com',
+            picture: 'https://lh3.googleusercontent.com/admin-photo'
+        })
             .setProtectedHeader({ alg: 'HS256' })
             .setIssuer('coconut-studio-wiki')
             .setAudience('coconut-studio-wiki')
@@ -66,7 +77,10 @@ describe('Google OAuth roles', () => {
             }
         )
 
-        await expect(service.authenticateSession(token)).resolves.toMatchObject({ roles: ['wiki:admin'] })
+        await expect(service.authenticateSession(token)).resolves.toMatchObject({
+            picture: 'https://lh3.googleusercontent.com/admin-photo',
+            roles: ['wiki:admin']
+        })
     })
 })
 

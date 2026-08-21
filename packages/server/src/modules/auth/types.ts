@@ -4,6 +4,7 @@ export type AuthContext = {
     userId: string
     name: string
     email?: string
+    picture?: string
     roles: string[]
 }
 

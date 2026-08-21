@@ -8,6 +8,8 @@ import { badRequest, HttpError, notFound } from '../../shared/http/http-error'
 import { normalizePageIcon } from '../../shared/page-normalization'
 import { WikiPageService } from './page-service'
 
+const GLOBAL_NAVIGATION_ID = 'wiki:global-navigation'
+
 export function createPageRouter(repositories: WikiRepositories, authService: WikiAuthService): Router {
     const router = Router()
     const pages = new WikiPageService(repositories)
@@ -18,22 +20,31 @@ export function createPageRouter(repositories: WikiRepositories, authService: Wi
         response.json({ pages: await pages.listReadablePages(await auth(request)) })
     })
 
+    router.get('/pages/search', async (request, response) => {
+        const query = typeof request.query.q === 'string' ? request.query.q.trim() : ''
+        if (query.length > 100) throw badRequest('q must contain at most 100 characters')
+        response.json({ results: await pages.searchReadablePages(query, await auth(request)) })
+    })
+
     router.get('/navigation/preferences', async (request, response) => {
-        const actor = pages.requireAuthenticated(await auth(request))
-        const record = await repositories.navigation.getNavigationPreferences(actor.userId)
+        const actor = await auth(request)
+        const globalRecord = await repositories.navigation.getNavigationPreferences(GLOBAL_NAVIGATION_ID)
+        const legacyRecord =
+            !globalRecord && actor ? await repositories.navigation.getNavigationPreferences(actor.userId) : null
+        const preferences = globalRecord?.preferences ?? legacyRecord?.preferences ?? defaultNavigationPreferences()
         response.json({
-            preferences: record?.preferences ?? defaultNavigationPreferences(),
-            initialized: Boolean(record),
-            version: record?.version ?? null
+            preferences,
+            initialized: Boolean(globalRecord || legacyRecord),
+            version: globalRecord?.version ?? null
         })
     })
 
     router.put('/navigation/preferences', async (request, response) => {
-        const actor = pages.requireAuthenticated(await auth(request))
+        await pages.requireGlobalAdmin(await auth(request))
         const body = asObject(request.body)
         try {
             const record = await repositories.navigation.saveNavigationPreferences({
-                userId: actor.userId,
+                userId: GLOBAL_NAVIGATION_ID,
                 preferences: parseNavigationPreferencesBody(body.preferences),
                 expectedVersion:
                     body.baseVersion === null ? null : requirePositiveInteger(body.baseVersion, 'baseVersion')
@@ -76,6 +87,15 @@ export function createPageRouter(repositories: WikiRepositories, authService: Wi
         const pageId = String(request.params.pageId)
         await pages.requirePageWriter(pageId, await auth(request))
         const page = await repositories.pages.updatePageMeta({ pageId, ...parseMetaBody(request.body) })
+        if (!page) throw notFound('Wiki page was not found')
+        response.json({ page })
+    })
+
+    router.patch('/pages/:pageId/address', async (request, response) => {
+        const pageId = String(request.params.pageId)
+        await pages.requirePageWriter(pageId, await auth(request))
+        const body = asObject(request.body)
+        const page = await repositories.pages.updatePageAddress({ pageId, slug: requireSlug(body.slug) })
         if (!page) throw notFound('Wiki page was not found')
         response.json({ page })
     })
@@ -165,7 +185,6 @@ function parseMetaBody(body: unknown) {
     return {
         title: requireText(value.title, 'title'),
         icon: normalizePageIcon(value.icon),
-        slug: requireSlug(value.slug),
         visibility: requireVisibility(value.visibility)
     }
 }

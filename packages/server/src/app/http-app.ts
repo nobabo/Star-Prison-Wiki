@@ -2,6 +2,7 @@ import express, { type Express } from 'express'
 
 import type { WikiAuthService } from '../modules/auth/auth-service'
 import { createAuthRouter, type AuthRouterOptions } from '../modules/auth/auth-router'
+import { createMediaRouter } from '../modules/media/media-router'
 import { createPageRouter } from '../modules/pages/page-router'
 import type { WikiRepositories } from '../persistence/repository'
 import { errorResponse, HttpError } from '../shared/http/http-error'
@@ -12,12 +13,16 @@ export type WikiHttpAppOptions = {
     authRouter: AuthRouterOptions
     jsonLimit?: string
     logger?: Pick<Console, 'error'>
+    mediaDirectory?: string
 }
 
 export function createWikiHttpApp(options: WikiHttpAppOptions): Express {
     const app = express()
     const logger = options.logger ?? console
     app.disable('x-powered-by')
+    if (options.mediaDirectory) {
+        app.use('/api/wiki', createMediaRouter(options.repositories, options.authService, options.mediaDirectory))
+    }
     app.use(express.json({ limit: options.jsonLimit ?? '5mb' }))
 
     app.get('/api/wiki/health', (_request, response) => {
@@ -54,6 +59,9 @@ function mapError(error: unknown): HttpError {
         return new HttpError(409, 'conflict', 'The wiki slug is already in use')
     }
     if (message.startsWith('oauth_')) return new HttpError(400, message, message.replaceAll('_', ' '))
+    if ((error as { type?: unknown })?.type === 'entity.too.large') {
+        return new HttpError(413, 'image_too_large', 'Image files must be 100MB or smaller')
+    }
     if (error instanceof SyntaxError && 'body' in error) return new HttpError(400, 'bad_request', 'Invalid JSON body')
     return new HttpError(500, 'internal_server_error', 'Unexpected wiki server error')
 }

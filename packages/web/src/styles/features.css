@@ -166,49 +166,6 @@
     padding: var(--wiki-main-block-start-padding) var(--wiki-main-inline-padding) var(--wiki-main-block-end-padding);
 }
 
-.wiki-mode-tabs {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    width: min(100%, 1120px);
-    margin: 0 auto 20px;
-    padding-bottom: 10px;
-    border-bottom: 1px solid var(--wiki-border);
-}
-
-.wiki-mode-tab {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 7px;
-    min-height: 38px;
-    padding: 0 14px;
-    border: 1px solid transparent;
-    border-radius: 6px;
-    background: transparent;
-    color: var(--wiki-ink-muted);
-    font: inherit;
-    font-size: 13px;
-    font-weight: 700;
-    cursor: pointer;
-    transition:
-        border-color 140ms ease,
-        background-color 140ms ease,
-        color 140ms ease;
-}
-
-.wiki-mode-tab:hover,
-.wiki-mode-tab:focus-visible {
-    border-color: var(--wiki-border-strong);
-    color: var(--wiki-content-ink);
-}
-
-.wiki-mode-tab.active {
-    border-color: color-mix(in srgb, var(--wiki-accent) 48%, var(--wiki-border));
-    background: var(--wiki-accent-wash);
-    color: var(--wiki-accent);
-}
-
 .editor-title-row {
     position: relative;
     display: grid;
@@ -216,15 +173,27 @@
     align-items: center;
     gap: 12px;
     box-sizing: border-box;
-    width: 100%;
+    width: 30%;
+    max-width: 100%;
+    margin-inline: auto;
+    margin-bottom: 15px;
     min-height: 132px;
     padding: 24px 26px;
     overflow: visible;
-    border: 2px solid var(--wiki-highlight-border);
+    border: 0;
     border-radius: 16px;
-    background: transparent;
+    background: color-mix(in srgb, var(--wiki-accent) 14%, transparent);
     color: var(--wiki-content-ink);
+    font-size: clamp(34px, 5vw, 52px);
     box-shadow: var(--wiki-highlight-shadow);
+}
+
+.editor-frame .editor-title-row {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.editor-frame .editor-icon-picker {
+    display: none;
 }
 
 :root[data-theme='light'] .editor-title-row {
@@ -243,6 +212,7 @@
 
 .editor-title-row .editor-title-input {
     padding: 0;
+    text-align: center;
 }
 
 .editor-icon-picker {
@@ -387,13 +357,17 @@
     border: 0;
     outline: 0;
     background: transparent;
-    color: var(--wiki-content-ink);
+    color: #fff;
     font-family: var(--wiki-font-display);
-    font-size: clamp(34px, 5vw, 52px);
+    font-size: inherit;
     font-weight: 400;
     letter-spacing: -0.035em;
     line-height: 1.08;
     text-shadow: 3px 3px 0 var(--wiki-title-shadow);
+}
+
+:root[data-theme='light'] .editor-title-input {
+    color: #000;
 }
 
 .editor-title-input::placeholder {

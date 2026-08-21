@@ -116,6 +116,38 @@ describe('FileWikiRepository', () => {
         ).rejects.toThrow('slug_conflict')
     })
 
+    it('persists a changed page address and resolves the page only by its new slug', async () => {
+        const { repository } = await createRepository()
+        const page = await repository.getPageBySlug('welcome')
+        expect(page).not.toBeNull()
+
+        const updated = await repository.updatePageAddress({
+            pageId: page!.id,
+            slug: 'new-address'
+        })
+
+        expect(updated?.slug).toBe('new-address')
+        expect(await repository.getPageBySlug('welcome')).toBeNull()
+        expect((await repository.getPageBySlug('new-address'))?.id).toBe(page!.id)
+    })
+
+    it('does not revert a changed address during a later metadata save', async () => {
+        const { repository } = await createRepository()
+        const page = await repository.getPageBySlug('welcome')
+        expect(page).not.toBeNull()
+
+        await repository.updatePageAddress({ pageId: page!.id, slug: 'stable-address' })
+        const updated = await repository.updatePageMeta({
+            pageId: page!.id,
+            title: '새 제목',
+            icon: page!.icon,
+            visibility: page!.visibility
+        })
+
+        expect(updated?.slug).toBe('stable-address')
+        expect(updated?.title).toBe('새 제목')
+    })
+
     it('rejects stale snapshot writes without replacing the latest snapshot', async () => {
         const { repository } = await createRepository()
         const page = await repository.getPageBySlug('welcome')

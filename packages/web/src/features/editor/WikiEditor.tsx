@@ -1,17 +1,28 @@
 import type { EmojiClickData } from 'emoji-picker-react'
+import Image from '@tiptap/extension-image'
+import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight'
 import Link from '@tiptap/extension-link'
 import Placeholder from '@tiptap/extension-placeholder'
 import { TextStyleKit } from '@tiptap/extension-text-style'
 import { Markdown } from '@tiptap/markdown'
 import { EditorContent, type Editor, useEditor } from '@tiptap/react'
+import { NodeSelection } from '@tiptap/pm/state'
 import StarterKit from '@tiptap/starter-kit'
+import { common, createLowlight } from 'lowlight'
 import {
+    BetweenHorizontalEnd,
+    BetweenHorizontalStart,
+    BetweenVerticalEnd,
+    BetweenVerticalStart,
     Bold,
     CalendarDays,
     CheckSquare,
     Clock,
     CloudSun,
     Code2,
+    Columns3,
+    AArrowDown,
+    AArrowUp,
     Eraser,
     FileCode2,
     FileText,
@@ -22,11 +33,15 @@ import {
     ListOrdered,
     MapPinned,
     Minus,
+    PanelLeft,
     Quote,
+    Rows3,
     Sigma,
     Strikethrough,
+    Table2,
     TextQuote,
     ToggleRight,
+    Trash2,
     Underline
 } from 'lucide-react'
 import {
@@ -36,23 +51,31 @@ import {
     useMemo,
     useRef,
     useState,
+    type ClipboardEvent,
+    type DragEvent,
     type KeyboardEvent,
     type MouseEvent
 } from 'react'
 import Collaboration from '@tiptap/extension-collaboration'
 import * as Y from 'yjs'
 
-import type { WikiPageDetailDto, WikiPageDto } from '@coconut-studio/wiki-contracts'
+import type { WikiPageDetailDto, WikiPageDto, WikiUserDto } from '@coconut-studio/wiki-contracts'
 import {
-    encodeColorDirectives,
     HIGHLIGHT_BLOCK_DEFAULT_WIDTH,
     normalizeHighlightBlockShape,
-    normalizeHighlightBlockWidth
+    normalizeHighlightBlockWidth,
+    normalizeHighlightBlockBackgroundColor,
+    normalizeQuoteBlockAttrs,
+    normalizeQuoteColor,
+    normalizeQuoteEmoji,
+    normalizeQuoteTone,
+    normalizeTableHeaderBackground
 } from '@coconut-studio/wiki-markdown'
-import type { HighlightBlockShape } from '@coconut-studio/wiki-markdown'
+import type { HighlightBlockShape, QuoteTone } from '@coconut-studio/wiki-markdown'
 
 import type { ApiClient } from '../../shared/api/wiki-api'
 import { EditorContextMenus } from './components/EditorContextMenus'
+import { EditorLinePresence, useEditorPresence } from './components/EditorPresence'
 import { EditorHeader } from './components/EditorHeader'
 import { EditorStatusBar } from './components/EditorStatusBar'
 import { EditorTopBar } from './components/EditorTopBar'
@@ -63,44 +86,127 @@ import type {
     ContextSubmenuState,
     ExtraMenuAction,
     HighlightPreset,
-    ToolbarAction
+    ToolbarAction,
+    WikiLinkCategory
 } from './editor-types'
 import { InsertSpacesOnTab, ParagraphFirstSelectAll } from './extensions/editor-behavior'
+import { PreventNestedDocumentElements } from './extensions/prevent-nested-document-elements'
+import { WikiBlockquote } from './extensions/wiki-blockquote-extension'
 import { WikiHighlightBlock } from './extensions/wiki-highlight-extension'
+import {
+    DeleteEmptyTableOnBackspace,
+    separateTableResizeUndoStep,
+    WikiTableAttributes,
+    WikiTableKit
+} from './extensions/wiki-table-extension'
 import { useCollaborationSession } from './hooks/use-collaboration-session'
+import {
+    EDITOR_CARD_CONTENT_CONTEXT_MENU_EVENT,
+    type EditorCardContentContextMenuDetail
+} from './hooks/use-card-insert-control'
 import { usePageMetadataAutosave } from './hooks/use-page-metadata-autosave'
 import { useSavepoints } from './hooks/use-savepoints'
 import { useSnapshotAutosave } from './hooks/use-snapshot-autosave'
+import { getContainingDocumentElementEnd } from './lib/document-elements'
 import { createHighlightBlockContent, getCurrentBlockValue, getEditorSelectionRect } from './lib/editor-utils'
-import { getEditorMarkdown } from './lib/wiki-markdown'
+import {
+    copyActiveTable,
+    deleteEmptyParagraphAfterImage,
+    deleteSelectedImage,
+    EDITOR_IMAGE_FILES_EVENT,
+    getDroppedImageFiles,
+    getImageFiles,
+    pasteCopiedTable,
+    uploadAndInsertImages,
+    type EditorImageFilesDetail
+} from './lib/editor-media'
+import { getEditorMarkdown, setEditorMarkdown } from './lib/wiki-markdown'
 
 const CONTEXT_MENU_WIDTH = 316
 const CONTEXT_MENU_MAX_HEIGHT = 560
 const CONTEXT_MENU_GUTTER = 8
 const SELECTION_DRAG_THRESHOLD = 4
+const DEFAULT_FONT_SIZE = 15.5
+const FONT_SIZE_STEP = 2
+const MIN_FONT_SIZE = 8
+const MAX_FONT_SIZE = 72
+const lowlight = createLowlight(common)
+const DEFAULT_TABLE_NODE = {
+    type: 'table',
+    content: Array.from({ length: 3 }, (_, rowIndex) => ({
+        type: 'tableRow',
+        content: Array.from({ length: 3 }, () => ({
+            type: rowIndex === 0 ? 'tableHeader' : 'tableCell',
+            content: [{ type: 'paragraph' }]
+        }))
+    }))
+}
+
+export function getTopLevelInsertionPosition(editor: Editor, position: number): number {
+    const resolved = editor.state.doc.resolve(position)
+    if (resolved.depth === 0) return position
+
+    return resolved.after(1)
+}
+
+export function isTableHeaderColumnActive(editor: Editor | null): boolean {
+    if (!editor) return false
+
+    const { $from } = editor.state.selection
+    for (let depth = $from.depth; depth > 0; depth -= 1) {
+        const node = $from.node(depth)
+        if (node.type.name !== 'table') continue
+
+        return node.childCount > 0 && node.content.content.every((row) => row.firstChild?.type.name === 'tableHeader')
+    }
+
+    return false
+}
 
 export type WikiEditorProps = {
     client: ApiClient
+    editable: boolean
     page: WikiPageDetailDto
     pages: WikiPageDto[]
+    categories: WikiLinkCategory[]
+    currentUser: WikiUserDto | null
     collaborationUrl(pageId: string): string
     onCreatePage(title: string): Promise<WikiPageDto>
     onPageUpdated?: (page: WikiPageDetailDto) => void
+    pageHrefForSlug?: (slug: string) => string
+    categoryHrefForKey?: (key: string) => string
 }
 
-export function WikiEditor({ client, page, pages, collaborationUrl, onCreatePage, onPageUpdated }: WikiEditorProps) {
+export function WikiEditor({
+    client,
+    editable,
+    page,
+    pages,
+    categories,
+    currentUser,
+    collaborationUrl,
+    onCreatePage,
+    onPageUpdated,
+    pageHrefForSlug = (slug) => `/wiki/${encodeURIComponent(slug)}`,
+    categoryHrefForKey = (key) => `/wiki/category/${encodeURIComponent(key)}`
+}: WikiEditorProps) {
     const ydoc = useMemo(() => new Y.Doc({ guid: page.id }), [page.id])
     const [showIconPicker, setShowIconPicker] = useState(false)
     const [contextMenu, setContextMenu] = useState<ContextMenuState>(null)
     const [contextSubmenu, setContextSubmenu] = useState<ContextSubmenuState>(null)
     const [editorActionError, setEditorActionError] = useState<string | null>(null)
+    const [contentReady, setContentReady] = useState(false)
+    const [imageDragActive, setImageDragActive] = useState(false)
     const [, setSelectionTick] = useState(0)
     const markdownSerializationTimer = useRef<number | null>(null)
     const pendingMarkdownEditor = useRef<Editor | null>(null)
     const selectionDragStart = useRef<{ x: number; y: number } | null>(null)
+    const imageDragDepth = useRef(0)
     const contextMenuSelection = useRef<{ from: number; to: number } | null>(null)
     const collaborationSyncedRef = useRef(false)
-    const collaborationSynced = useCollaborationSession({
+    const editorStageRef = useRef<HTMLDivElement>(null)
+    const { provider: collaborationProvider, synced: collaborationSynced } = useCollaborationSession({
+        editable,
         document: ydoc,
         pageId: page.id,
         token: client.token,
@@ -108,14 +214,11 @@ export function WikiEditor({ client, page, pages, collaborationUrl, onCreatePage
     })
     const {
         saveState,
-        pendingDraft,
         hasUserEdited,
         scheduleSave,
         flushSnapshot,
         adoptSnapshot,
         getSnapshotUpdatedAt,
-        restoreDraft,
-        discardDraft,
         markUserEdited
     } = useSnapshotAutosave({ client, page })
     const {
@@ -125,7 +228,13 @@ export function WikiEditor({ client, page, pages, collaborationUrl, onCreatePage
         createNow: createSavepointNow,
         restore: restoreSavepoint,
         retry: retrySavepoints
-    } = useSavepoints({ client, pageId: page.id, flushSnapshot, getSnapshotUpdatedAt })
+    } = useSavepoints({
+        enabled: editable,
+        client,
+        pageId: page.id,
+        flushSnapshot,
+        getSnapshotUpdatedAt
+    })
     const {
         title,
         icon,
@@ -136,7 +245,7 @@ export function WikiEditor({ client, page, pages, collaborationUrl, onCreatePage
     } = usePageMetadataAutosave({ client, page, onPageUpdated })
     const serializeEditorUpdate = useCallback(
         (updatedEditor: Editor) => {
-            if (!collaborationSyncedRef.current) return
+            if (!editable || !collaborationSyncedRef.current) return
             const markdownValue = getEditorMarkdown(updatedEditor)
 
             if (!hasUserEdited.current && page.markdown.trim() && !markdownValue.trim()) {
@@ -146,22 +255,50 @@ export function WikiEditor({ client, page, pages, collaborationUrl, onCreatePage
             scheduleSave(markdownValue)
             if (hasUserEdited.current) markSavepointChanged()
         },
-        [hasUserEdited, markSavepointChanged, page.markdown, scheduleSave]
+        [editable, hasUserEdited, markSavepointChanged, page.markdown, scheduleSave]
     )
     const finishSelectionDragEvent = useEffectEvent((event: globalThis.MouseEvent) => {
         finishEditorSelectionDrag(event.button, event.clientX, event.clientY)
     })
+    const startSelectionDragEvent = useEffectEvent((event: globalThis.MouseEvent) => {
+        handleEditorMouseDown(event)
+    })
 
     const editor = useEditor(
         {
+            editable,
             extensions: [
                 InsertSpacesOnTab,
                 ParagraphFirstSelectAll,
                 StarterKit.configure({
                     undoRedo: false,
-                    link: false
+                    link: false,
+                    codeBlock: false,
+                    blockquote: false
                 }),
+                CodeBlockLowlight.configure({
+                    lowlight,
+                    enableTabIndentation: true,
+                    tabSize: 4
+                }),
+                WikiTableKit,
+                WikiTableAttributes,
+                DeleteEmptyTableOnBackspace,
+                Image.configure({
+                    HTMLAttributes: {
+                        class: 'wiki-content-image'
+                    },
+                    resize: {
+                        enabled: true,
+                        directions: ['top-left', 'top-right', 'bottom-left', 'bottom-right'],
+                        minWidth: 80,
+                        minHeight: 40,
+                        alwaysPreserveAspectRatio: true
+                    }
+                }),
+                WikiBlockquote,
                 WikiHighlightBlock,
+                PreventNestedDocumentElements,
                 Markdown.configure({
                     markedOptions: {
                         gfm: true,
@@ -170,7 +307,7 @@ export function WikiEditor({ client, page, pages, collaborationUrl, onCreatePage
                 }),
                 TextStyleKit,
                 Link.configure({
-                    openOnClick: false,
+                    openOnClick: !editable,
                     autolink: true,
                     defaultProtocol: 'https'
                 }),
@@ -184,10 +321,20 @@ export function WikiEditor({ client, page, pages, collaborationUrl, onCreatePage
             editorProps: {
                 attributes: {
                     class: 'editor-surface',
-                    'aria-label': '위키 문서 편집기'
+                    'aria-label': editable ? '위키 문서 편집기' : '위키 문서'
+                },
+                handleClickOn(view, _position, node, nodePosition, _event, direct) {
+                    if (!editable || !direct || node.type.name !== 'image') return false
+                    view.dispatch(
+                        view.state.tr.setSelection(NodeSelection.create(view.state.doc, nodePosition)).scrollIntoView()
+                    )
+                    view.focus()
+                    return true
                 }
             },
-            onUpdate({ editor: updatedEditor }) {
+            onUpdate({ editor: updatedEditor, transaction }) {
+                if (!editable) return
+                if (transaction.getMeta('cardUserEdit') === true) markUserEdited()
                 pendingMarkdownEditor.current = updatedEditor
                 if (markdownSerializationTimer.current !== null) {
                     window.clearTimeout(markdownSerializationTimer.current)
@@ -202,23 +349,38 @@ export function WikiEditor({ client, page, pages, collaborationUrl, onCreatePage
                 setSelectionTick((tick) => tick + 1)
             }
         },
-        [page.id, serializeEditorUpdate, ydoc]
+        [editable, page.id, serializeEditorUpdate, ydoc]
     )
+
+    const collaborators = useEditorPresence({
+        provider: collaborationProvider,
+        editor,
+        editable,
+        user: currentUser
+    })
 
     useEffect(() => {
         collaborationSyncedRef.current = collaborationSynced
     }, [collaborationSynced])
 
     useEffect(() => {
-        if (!collaborationSynced || !editor || !page.markdown.trim()) return
+        if (!collaborationSynced || !editor) return
         const fragment = ydoc.getXmlFragment('default')
-        if (fragment.length > 0) return
+        if (fragment.length > 0) {
+            setContentReady(true)
+            return
+        }
+        if (!page.markdown.trim()) {
+            setContentReady(true)
+            return
+        }
 
         const bootstrapTimer = window.setTimeout(
             () => {
                 if (fragment.length === 0) {
-                    editor.commands.setContent(encodeColorDirectives(page.markdown), { contentType: 'markdown' })
+                    setEditorMarkdown(editor, page.markdown)
                 }
+                setContentReady(true)
             },
             75 + (ydoc.clientID % 75)
         )
@@ -237,14 +399,69 @@ export function WikiEditor({ client, page, pages, collaborationUrl, onCreatePage
         }
     }, [editor, serializeEditorUpdate])
 
-    useEffect(() => setShowIconPicker(false), [page.id])
+    const insertImageFilesEvent = useEffectEvent((files: File[], position?: number) => {
+        void insertImageFiles(files, position)
+    })
+    const nativePasteEvent = useEffectEvent((event: globalThis.ClipboardEvent) => {
+        handleEditorPaste(event)
+    })
+    const nativeDropEvent = useEffectEvent((event: globalThis.DragEvent) => {
+        handleEditorDrop(event)
+    })
+    const openCardContentContextMenuEvent = useEffectEvent((event: Event) => {
+        const { clientX, clientY } = (event as CustomEvent<EditorCardContentContextMenuDetail>).detail
+        openContextMenuAtCoordinates(clientX, clientY, 'editor')
+    })
+    const openQuoteEmojiPickerEvent = useEffectEvent((event: Event) => {
+        const target = event.target
+        if (!(target instanceof Element)) return
+        const button = target.closest<HTMLElement>('.wiki-quote-emoji-control')
+        if (!button) return
+
+        event.preventDefault()
+        event.stopPropagation()
+        const rect = button.getBoundingClientRect()
+        openContextMenuAtCoordinates(rect.left, rect.bottom + CONTEXT_MENU_GUTTER / 2, 'quote')
+    })
+
+    useEffect(() => {
+        if (!editable || !editor || !contentReady) return
+        const editorElement = editor.view.dom
+        const handleFiles = (event: Event) => {
+            const { files, position } = (event as CustomEvent<EditorImageFilesDetail>).detail
+            insertImageFilesEvent(files, position)
+        }
+        editorElement.addEventListener(EDITOR_IMAGE_FILES_EVENT, handleFiles)
+        editorElement.addEventListener(EDITOR_CARD_CONTENT_CONTEXT_MENU_EVENT, openCardContentContextMenuEvent)
+        editorElement.addEventListener('click', openQuoteEmojiPickerEvent, true)
+        editorElement.addEventListener('mousedown', startSelectionDragEvent, true)
+        editorElement.addEventListener('paste', nativePasteEvent, true)
+        editorElement.addEventListener('drop', nativeDropEvent, true)
+        return () => {
+            editorElement.removeEventListener(EDITOR_IMAGE_FILES_EVENT, handleFiles)
+            editorElement.removeEventListener(EDITOR_CARD_CONTENT_CONTEXT_MENU_EVENT, openCardContentContextMenuEvent)
+            editorElement.removeEventListener('click', openQuoteEmojiPickerEvent, true)
+            editorElement.removeEventListener('mousedown', startSelectionDragEvent, true)
+            editorElement.removeEventListener('paste', nativePasteEvent, true)
+            editorElement.removeEventListener('drop', nativeDropEvent, true)
+        }
+    }, [client, contentReady, editable, editor])
+
+    useEffect(() => {
+        setShowIconPicker(false)
+    }, [page.id])
 
     useEffect(() => {
         if (!contextMenu) {
             return
         }
 
-        const closeMenu = () => {
+        const closeMenu = (event: Event) => {
+            const target = event.target
+            if (target instanceof Element && target.closest('.editor-context-menu, .editor-context-submenu')) {
+                return
+            }
+
             setContextSubmenu(null)
             setContextMenu(null)
         }
@@ -260,44 +477,23 @@ export function WikiEditor({ client, page, pages, collaborationUrl, onCreatePage
     }, [contextMenu])
 
     useEffect(() => {
-        if (!editor) {
+        if (!editable || !editor) {
             return
         }
 
-        window.addEventListener('mouseup', finishSelectionDragEvent)
+        window.addEventListener('mouseup', finishSelectionDragEvent, true)
 
         return () => {
-            window.removeEventListener('mouseup', finishSelectionDragEvent)
+            window.removeEventListener('mouseup', finishSelectionDragEvent, true)
         }
-    }, [editor])
-
-    function restoreLocalDraft() {
-        if (!editor) return
-        if (
-            pendingDraft &&
-            pendingDraft.baseMarkdown !== page.markdown &&
-            !window.confirm('이 임시 초안은 현재 서버 문서보다 오래된 버전을 기준으로 합니다. 그래도 복구할까요?')
-        ) {
-            return
-        }
-        const markdown = restoreDraft()
-        if (markdown === null) return
-        editor.commands.setContent(encodeColorDirectives(markdown), {
-            contentType: 'markdown'
-        })
-        editor.commands.focus()
-    }
-
-    function discardLocalDraft() {
-        discardDraft()
-    }
+    }, [editable, editor])
 
     async function restoreDocumentSavepoint(savepointId: string) {
         const snapshot = await restoreSavepoint(savepointId)
         if (!snapshot || !editor) return
         hasUserEdited.current = false
         adoptSnapshot(snapshot)
-        editor.commands.setContent(encodeColorDirectives(snapshot.markdown), { contentType: 'markdown' })
+        setEditorMarkdown(editor, snapshot.markdown)
         editor.commands.focus()
     }
 
@@ -341,13 +537,63 @@ export function WikiEditor({ client, page, pages, collaborationUrl, onCreatePage
         editor?.chain().focus().unsetBackgroundColor().run()
     }
 
-    function applyLink() {
+    function setQuoteTone(tone: QuoteTone) {
+        if (!editor || !editor.isActive('blockquote')) {
+            return
+        }
+
+        hasUserEdited.current = true
+        editor
+            .chain()
+            .focus()
+            .updateAttributes('blockquote', { tone: normalizeQuoteTone(tone), color: '' })
+            .run()
+        contextMenuSelection.current = null
+        setContextSubmenu(null)
+        setContextMenu(null)
+    }
+
+    function setQuoteColor(color: string) {
+        if (!editor || !editor.isActive('blockquote')) {
+            return
+        }
+
+        hasUserEdited.current = true
+        editor
+            .chain()
+            .focus()
+            .updateAttributes('blockquote', { color: normalizeQuoteColor(color) })
+            .run()
+        contextMenuSelection.current = null
+        setContextSubmenu(null)
+        setContextMenu(null)
+    }
+
+    function changeFontSize(delta: number) {
+        if (!editor) return
+
+        const explicitFontSize = editor.getAttributes('textStyle').fontSize
+        const explicitSizeMatch = /^\d+(?:\.\d+)?px$/i.exec(String(explicitFontSize ?? '').trim())
+        const explicitSize = explicitSizeMatch ? Number.parseFloat(explicitSizeMatch[0]) : null
+        const selectionNode = editor.view.domAtPos(editor.state.selection.from).node
+        const selectionElement = selectionNode instanceof Element ? selectionNode : selectionNode.parentElement
+        const renderedSize = selectionElement
+            ? Number.parseFloat(window.getComputedStyle(selectionElement).fontSize)
+            : NaN
+        const currentSize = explicitSize ?? (Number.isFinite(renderedSize) ? renderedSize : DEFAULT_FONT_SIZE)
+        const nextSize = Math.min(MAX_FONT_SIZE, Math.max(MIN_FONT_SIZE, currentSize + delta))
+
+        markEditorChangedIntent()
+        editor.chain().focus().setFontSize(`${nextSize}px`).run()
+    }
+
+    function applyHyperlink() {
         if (!editor) {
             return
         }
 
         const previousHref = String(editor.getAttributes('link').href ?? '')
-        const href = window.prompt('링크 URL', previousHref)
+        const href = window.prompt('하이퍼 링크 URL', previousHref)
 
         if (href === null) {
             return
@@ -375,10 +621,78 @@ export function WikiEditor({ client, page, pages, collaborationUrl, onCreatePage
             to: editor.state.selection.to
         }
 
+        const containingElementEnd = getContainingDocumentElementEnd(editor, selectionRange)
+
         hasUserEdited.current = true
-        editor.chain().focus().insertContentAt(selectionRange, content).run()
+        editor
+            .chain()
+            .focus()
+            .insertContentAt(containingElementEnd ?? selectionRange, content)
+            .run()
         contextMenuSelection.current = null
         setContextMenu(null)
+    }
+
+    function runIsolatedBlockAction(nodeName: string, fallbackContent: Record<string, unknown>, run: () => void) {
+        if (!editor) return
+
+        const selectionRange = contextMenuSelection.current ?? {
+            from: editor.state.selection.from,
+            to: editor.state.selection.to
+        }
+        const containingElementEnd = getContainingDocumentElementEnd(editor, selectionRange)
+        if (containingElementEnd !== null && !editor.isActive(nodeName)) {
+            hasUserEdited.current = true
+            editor.chain().focus().insertContentAt(containingElementEnd, fallbackContent).run()
+            return
+        }
+
+        run()
+    }
+
+    function toggleBulletList() {
+        runIsolatedBlockAction(
+            'bulletList',
+            { type: 'bulletList', content: [{ type: 'listItem', content: [{ type: 'paragraph' }] }] },
+            () => editor?.chain().focus().toggleBulletList().run()
+        )
+    }
+
+    function toggleOrderedList() {
+        runIsolatedBlockAction(
+            'orderedList',
+            { type: 'orderedList', content: [{ type: 'listItem', content: [{ type: 'paragraph' }] }] },
+            () => editor?.chain().focus().toggleOrderedList().run()
+        )
+    }
+
+    function toggleBlockquote() {
+        runIsolatedBlockAction(
+            'blockquote',
+            { type: 'blockquote', content: [{ type: 'paragraph', content: [{ type: 'text', text: '인용문' }] }] },
+            () => editor?.chain().focus().toggleBlockquote().run()
+        )
+    }
+
+    function toggleCodeBlock() {
+        runIsolatedBlockAction('codeBlock', { type: 'codeBlock', content: [{ type: 'text', text: 'code' }] }, () =>
+            editor?.chain().focus().toggleCodeBlock().run()
+        )
+    }
+
+    function insertHorizontalRule() {
+        if (!editor) return
+        const selectionRange = contextMenuSelection.current ?? {
+            from: editor.state.selection.from,
+            to: editor.state.selection.to
+        }
+        const containingElementEnd = getContainingDocumentElementEnd(editor, selectionRange)
+        if (containingElementEnd !== null) {
+            hasUserEdited.current = true
+            editor.chain().focus().insertContentAt(containingElementEnd, { type: 'horizontalRule' }).run()
+            return
+        }
+        editor.chain().focus().setHorizontalRule().run()
     }
 
     function insertPlainTextBlock(textValue: string) {
@@ -410,7 +724,11 @@ export function WikiEditor({ client, page, pages, collaborationUrl, onCreatePage
         }
 
         insertContextContent([
-            { type: 'heading', attrs: { level: 3 }, content: [{ type: 'text', text: `${monthLabel} 캘린더` }] },
+            {
+                type: 'heading',
+                attrs: { level: 3 },
+                content: [{ type: 'text', text: `${monthLabel} 캘린더` }]
+            },
             {
                 type: 'paragraph',
                 content: [
@@ -438,9 +756,73 @@ export function WikiEditor({ client, page, pages, collaborationUrl, onCreatePage
     function insertWeatherTemplate() {
         insertPlainTextBlock('현재 날씨: 지역 / 기온 / 습도 / 바람 / 메모')
     }
-    function insertEmoji(emojiData: EmojiClickData) {
+
+    function insertTable() {
+        if (!editor) return
+
+        const selectionRange = contextMenuSelection.current ?? {
+            from: editor.state.selection.from,
+            to: editor.state.selection.to
+        }
+        const insertionPosition = getTopLevelInsertionPosition(editor, selectionRange.from)
         hasUserEdited.current = true
-        editor?.chain().focus().insertContent(emojiData.emoji).run()
+        editor.chain().focus().insertContentAt(insertionPosition, DEFAULT_TABLE_NODE).run()
+        contextMenuSelection.current = null
+    }
+
+    function addTableRowBefore() {
+        hasUserEdited.current = true
+        editor?.chain().focus().addRowBefore().run()
+    }
+
+    function addTableRowAfter() {
+        hasUserEdited.current = true
+        editor?.chain().focus().addRowAfter().run()
+    }
+
+    function addTableColumnBefore() {
+        hasUserEdited.current = true
+        editor?.chain().focus().addColumnBefore().run()
+    }
+
+    function addTableColumnAfter() {
+        hasUserEdited.current = true
+        editor?.chain().focus().addColumnAfter().run()
+    }
+
+    function deleteTableRow() {
+        hasUserEdited.current = true
+        editor?.chain().focus().deleteRow().run()
+    }
+
+    function deleteTableColumn() {
+        hasUserEdited.current = true
+        editor?.chain().focus().deleteColumn().run()
+    }
+
+    function deleteActiveTable() {
+        hasUserEdited.current = true
+        editor?.chain().focus().deleteTable().run()
+    }
+
+    function toggleTableHeaderColumn() {
+        hasUserEdited.current = true
+        editor?.chain().focus().toggleHeaderColumn().run()
+    }
+
+    function insertEmoji(emojiData: EmojiClickData) {
+        if (!editor) return
+
+        hasUserEdited.current = true
+        if (contextMenu?.kind === 'quote' && editor.isActive('blockquote')) {
+            editor
+                .chain()
+                .focus()
+                .updateAttributes('blockquote', { emoji: normalizeQuoteEmoji(emojiData.emoji) })
+                .run()
+        } else {
+            editor.chain().focus().insertContent(emojiData.emoji).run()
+        }
         setContextSubmenu(null)
         setContextMenu(null)
     }
@@ -454,17 +836,25 @@ export function WikiEditor({ client, page, pages, collaborationUrl, onCreatePage
             from: editor.state.selection.from,
             to: editor.state.selection.to
         }
+        const containingElementEnd = getContainingDocumentElementEnd(editor, selectionRange)
         const block = {
             type: 'wikiHighlightBlock',
             attrs: {
                 width: HIGHLIGHT_BLOCK_DEFAULT_WIDTH,
                 variant: preset.variant
             },
-            content: createHighlightBlockContent(editor, preset, selectionRange)
+            content:
+                containingElementEnd === null
+                    ? createHighlightBlockContent(editor, preset, selectionRange)
+                    : preset.content
         }
 
         hasUserEdited.current = true
-        editor.chain().focus().insertContentAt(selectionRange, block).run()
+        editor
+            .chain()
+            .focus()
+            .insertContentAt(containingElementEnd ?? selectionRange, block)
+            .run()
         contextMenuSelection.current = null
         setContextSubmenu(null)
         setContextMenu(null)
@@ -482,6 +872,36 @@ export function WikiEditor({ client, page, pages, collaborationUrl, onCreatePage
             .updateAttributes('wikiHighlightBlock', {
                 width: normalizeHighlightBlockWidth(width)
             })
+            .run()
+        contextMenuSelection.current = null
+        setContextSubmenu(null)
+        setContextMenu(null)
+    }
+
+    function setHighlightBlockBackgroundColor(color: string) {
+        if (!editor || !editor.isActive('wikiHighlightBlock')) return
+
+        hasUserEdited.current = true
+        editor
+            .chain()
+            .focus()
+            .updateAttributes('wikiHighlightBlock', {
+                backgroundColor: normalizeHighlightBlockBackgroundColor(color)
+            })
+            .run()
+        contextMenuSelection.current = null
+        setContextSubmenu(null)
+        setContextMenu(null)
+    }
+
+    function setTableHeaderBackground(color: string) {
+        if (!editor || !editor.isActive('table')) return
+
+        hasUserEdited.current = true
+        editor
+            .chain()
+            .focus()
+            .updateAttributes('table', { headerBackground: normalizeTableHeaderBackground(color) })
             .run()
         contextMenuSelection.current = null
         setContextSubmenu(null)
@@ -506,6 +926,24 @@ export function WikiEditor({ client, page, pages, collaborationUrl, onCreatePage
         setContextMenu(null)
     }
 
+    function unsetHighlightBlockBackgroundColor() {
+        setHighlightBlockBackgroundColor('')
+    }
+
+    function unsetTableHeaderBackground() {
+        setTableHeaderBackground('')
+    }
+
+    function setCodeLanguage(language: string | null) {
+        if (!editor || !editor.isActive('codeBlock')) return
+
+        hasUserEdited.current = true
+        editor.chain().focus().updateAttributes('codeBlock', { language }).run()
+        contextMenuSelection.current = null
+        setContextSubmenu(null)
+        setContextMenu(null)
+    }
+
     function selectPageIcon(nextIcon: string) {
         updateIcon(nextIcon)
         setShowIconPicker(false)
@@ -524,7 +962,11 @@ export function WikiEditor({ client, page, pages, collaborationUrl, onCreatePage
         underlineChain.toggleUnderline?.().run()
     }
 
-    function getContextMenuState(x: number, y: number): Exclude<ContextMenuState, null> {
+    function getContextMenuState(
+        kind: Exclude<ContextMenuState, null>['kind'],
+        x: number,
+        y: number
+    ): Exclude<ContextMenuState, null> {
         const menuHeight = Math.min(CONTEXT_MENU_MAX_HEIGHT, window.innerHeight - CONTEXT_MENU_GUTTER * 2)
         const maxX = window.innerWidth - CONTEXT_MENU_WIDTH - CONTEXT_MENU_GUTTER
         const maxY = window.innerHeight - menuHeight - CONTEXT_MENU_GUTTER
@@ -532,6 +974,7 @@ export function WikiEditor({ client, page, pages, collaborationUrl, onCreatePage
         const safeY = Math.max(CONTEXT_MENU_GUTTER, Math.min(y, maxY))
 
         return {
+            kind,
             x: safeX,
             y: safeY,
             maxHeight: Math.max(160, window.innerHeight - safeY - CONTEXT_MENU_GUTTER)
@@ -586,16 +1029,14 @@ export function WikiEditor({ client, page, pages, collaborationUrl, onCreatePage
         setContextMenu(null)
     }
 
-    function openContextMenuAt(x: number, y: number) {
+    function openContextMenuAt(kind: Exclude<ContextMenuState, null>['kind'], x: number, y: number) {
         if (editor) {
             const { from, to } = editor.state.selection
             contextMenuSelection.current = { from, to }
         }
 
         setContextSubmenu(null)
-        setContextMenu({
-            ...getContextMenuState(x, y)
-        })
+        setContextMenu(getContextMenuState(kind, x, y))
     }
 
     function openContextMenu(event: MouseEvent) {
@@ -605,26 +1046,150 @@ export function WikiEditor({ client, page, pages, collaborationUrl, onCreatePage
             return
         }
 
-        editor.commands.focus()
-        openContextMenuAt(event.clientX, event.clientY)
+        const target = event.target
+        const clickedTable = target instanceof Element ? target.closest('table') : null
+        const clickedQuote = target instanceof Element ? target.closest('blockquote') : null
+        const menuKind = clickedTable ? 'table' : clickedQuote ? 'quote' : 'editor'
+        openContextMenuAtCoordinates(event.clientX, event.clientY, menuKind)
+    }
+
+    function openContextMenuAtCoordinates(
+        clientX: number,
+        clientY: number,
+        menuKind: Exclude<ContextMenuState, null>['kind']
+    ) {
+        if (!editor) {
+            return
+        }
+
+        const clickedPosition = editor.view.posAtCoords({
+            left: clientX,
+            top: clientY
+        })
+
+        const { from, to } = editor.state.selection
+        const shouldMoveSelection =
+            clickedPosition &&
+            (menuKind === 'table' ||
+                menuKind === 'quote' ||
+                from === to ||
+                clickedPosition.pos < from ||
+                clickedPosition.pos > to)
+
+        if (shouldMoveSelection) {
+            editor.chain().focus().setTextSelection(clickedPosition.pos).run()
+        } else {
+            editor.commands.focus()
+        }
+        openContextMenuAt(menuKind, clientX, clientY)
+    }
+
+    async function insertImageFiles(files: File[], position?: number) {
+        if (!editor || files.length === 0) return
+        try {
+            setEditorActionError(null)
+            markEditorChangedIntent()
+            await uploadAndInsertImages(editor, client, files, position)
+        } catch (error) {
+            console.error(error)
+            setEditorActionError('이미지를 업로드하지 못했습니다. 지원 형식과 100MB 이하 파일인지 확인해 주세요.')
+        }
+    }
+
+    function handleEditorCopy(event: ClipboardEvent<HTMLDivElement>) {
+        if (!editor || !copyActiveTable(editor, event.clipboardData, false)) return
+        event.preventDefault()
+    }
+
+    function handleEditorCut(event: ClipboardEvent<HTMLDivElement>) {
+        if (!editor || !copyActiveTable(editor, event.clipboardData, true)) return
+        event.preventDefault()
+    }
+
+    function handleEditorPaste(event: globalThis.ClipboardEvent) {
+        if (!editor) return
+        const clipboard = event.clipboardData
+        if (!clipboard) return
+        const images = getImageFiles(clipboard.items, clipboard.files)
+        if (images.length > 0) {
+            event.preventDefault()
+            event.stopPropagation()
+            void insertImageFiles(images)
+            return
+        }
+        if (pasteCopiedTable(editor, clipboard)) {
+            event.preventDefault()
+            event.stopPropagation()
+            markEditorChangedIntent()
+            return
+        }
+        markEditorChangedIntent()
+    }
+
+    function handleEditorDragEnter(event: DragEvent<HTMLDivElement>) {
+        if (!editor || getDroppedImageFiles(editor, event.dataTransfer.items, event.dataTransfer.files).length === 0)
+            return
+        event.preventDefault()
+        event.stopPropagation()
+        imageDragDepth.current += 1
+        setImageDragActive(true)
+    }
+
+    function handleEditorDragOver(event: DragEvent<HTMLDivElement>) {
+        if (!editor || getDroppedImageFiles(editor, event.dataTransfer.items, event.dataTransfer.files).length === 0)
+            return
+        event.preventDefault()
+        event.stopPropagation()
+        event.dataTransfer.dropEffect = 'copy'
+    }
+
+    function handleEditorDragLeave(event: DragEvent<HTMLDivElement>) {
+        if (!imageDragActive) return
+        event.preventDefault()
+        imageDragDepth.current = Math.max(0, imageDragDepth.current - 1)
+        if (imageDragDepth.current === 0) setImageDragActive(false)
+    }
+
+    function handleEditorDrop(event: globalThis.DragEvent) {
+        const transfer = event.dataTransfer
+        const images = editor && transfer ? getDroppedImageFiles(editor, transfer.items, transfer.files) : []
+        if (!editor || images.length === 0) return
+        event.preventDefault()
+        event.stopPropagation()
+        imageDragDepth.current = 0
+        setImageDragActive(false)
+        const coordinates = editor.view.posAtCoords({
+            left: event.clientX,
+            top: event.clientY
+        })
+        void insertImageFiles(images, coordinates?.pos)
     }
 
     function markEditorChangedIntent() {
         markUserEdited()
     }
 
-    function handleEditorMouseDown(event: MouseEvent) {
+    function handleEditorMouseDown(event: MouseEvent | globalThis.MouseEvent) {
         if (event.button !== 0) {
             return
         }
 
         selectionDragStart.current = { x: event.clientX, y: event.clientY }
+        const target = event.target
+        if (target instanceof Element && target.closest('.column-resize-handle')) {
+            markUserEdited()
+            separateTableResizeUndoStep(editor)
+            const resizedEditor = editor
+            window.addEventListener(
+                'mouseup',
+                () => {
+                    window.setTimeout(() => separateTableResizeUndoStep(resizedEditor), 0)
+                },
+                { once: true }
+            )
+        }
         setContextSubmenu(null)
         setContextMenu(null)
-    }
-
-    function handleEditorMouseUp(event: MouseEvent) {
-        finishEditorSelectionDrag(event.button, event.clientX, event.clientY)
     }
 
     function finishEditorSelectionDrag(button: number, clientX: number, clientY: number) {
@@ -658,20 +1223,28 @@ export function WikiEditor({ client, page, pages, collaborationUrl, onCreatePage
             return
         }
 
-        editorInstance.commands.focus()
+        openContextMenuAt(
+            'editor',
+            selectionRect.left + selectionRect.width / 2 - CONTEXT_MENU_WIDTH / 2,
+            selectionRect.bottom + CONTEXT_MENU_GUTTER
+        )
+    }
 
-        const menuHeight = Math.min(CONTEXT_MENU_MAX_HEIGHT, window.innerHeight - CONTEXT_MENU_GUTTER * 2)
-        const selectionCenter = selectionRect.left + selectionRect.width / 2
-        const menuX = selectionCenter - CONTEXT_MENU_WIDTH / 2
-        const belowY = selectionRect.bottom + CONTEXT_MENU_GUTTER
-        const aboveY = selectionRect.top - menuHeight - CONTEXT_MENU_GUTTER
-        const menuY = belowY + menuHeight > window.innerHeight - CONTEXT_MENU_GUTTER ? aboveY : belowY
-
-        openContextMenuAt(menuX, menuY)
+    function handleEditorKeyDownCapture(event: KeyboardEvent<HTMLDivElement>) {
+        if (event.key !== 'Backspace' || !editor || !deleteEmptyParagraphAfterImage(editor)) return
+        markEditorChangedIntent()
+        event.preventDefault()
+        event.stopPropagation()
     }
 
     function handleEditorKeyDown(event: KeyboardEvent<HTMLDivElement>) {
         markEditorChangedIntent()
+
+        if ((event.key === 'Backspace' || event.key === 'Delete') && editor && deleteSelectedImage(editor)) {
+            event.preventDefault()
+            event.stopPropagation()
+            return
+        }
 
         if (event.key.toLowerCase() !== 'a' || (!event.ctrlKey && !event.metaKey) || event.altKey) {
             return
@@ -708,17 +1281,20 @@ export function WikiEditor({ client, page, pages, collaborationUrl, onCreatePage
     }
 
     function linkSelectionToPage(targetPage: WikiPageDto, selectionRange = getContextSelectionRange()) {
+        linkSelectionToHref(pageHrefForSlug(targetPage.slug), selectionRange)
+    }
+
+    function linkSelectionToCategory(targetCategory: WikiLinkCategory, selectionRange = getContextSelectionRange()) {
+        linkSelectionToHref(categoryHrefForKey(targetCategory.documentSlug ?? targetCategory.id), selectionRange)
+    }
+
+    function linkSelectionToHref(href: string, selectionRange = getContextSelectionRange()) {
         if (!editor || !selectionRange || selectionRange.from === selectionRange.to) {
             return
         }
 
         hasUserEdited.current = true
-        editor
-            .chain()
-            .focus()
-            .setTextSelection(selectionRange)
-            .setLink({ href: `/wiki/${encodeURIComponent(targetPage.slug)}` })
-            .run()
+        editor.chain().focus().setTextSelection(selectionRange).setLink({ href }).run()
         contextMenuSelection.current = null
         setContextSubmenu(null)
         setContextMenu(null)
@@ -744,8 +1320,25 @@ export function WikiEditor({ client, page, pages, collaborationUrl, onCreatePage
 
     const blockValue = getCurrentBlockValue(editor)
     const isHighlightBlockActive = editor?.isActive('wikiHighlightBlock') ?? false
+    const activeQuoteAttrs = normalizeQuoteBlockAttrs(editor?.getAttributes('blockquote') ?? {})
+    const activeQuoteTone = activeQuoteAttrs.tone
+    const activeQuoteColor = activeQuoteAttrs.color
+    const isTableActive = editor?.isActive('table') ?? false
+    const isCodeBlockActive = editor?.isActive('codeBlock') ?? false
+    const activeCodeLanguage = (editor?.getAttributes('codeBlock').language as string | null | undefined) ?? null
+    const isHeaderColumnActive = isTableHeaderColumnActive(editor)
     const activeHighlightWidth = normalizeHighlightBlockWidth(editor?.getAttributes('wikiHighlightBlock').width)
     const activeHighlightShape = normalizeHighlightBlockShape(editor?.getAttributes('wikiHighlightBlock').shape)
+    const activeHighlightBackgroundColor = normalizeHighlightBlockBackgroundColor(
+        editor?.getAttributes('wikiHighlightBlock').backgroundColor
+    )
+    const activeTableHeaderBackground = normalizeTableHeaderBackground(editor?.getAttributes('table').headerBackground)
+    const activeLinkHref = String(editor?.getAttributes('link').href ?? '')
+    const internalLinkActive = editor?.isActive('link') === true && activeLinkHref.startsWith('/wiki/')
+    const hasSelectedText = editor
+        ? !editor.state.selection.empty &&
+          Boolean(editor.state.doc.textBetween(editor.state.selection.from, editor.state.selection.to, ' ').trim())
+        : false
     const inlineActions: ToolbarAction[] = [
         {
             id: 'bold',
@@ -783,11 +1376,32 @@ export function WikiEditor({ client, page, pages, collaborationUrl, onCreatePage
             active: editor?.isActive('code') ?? false
         },
         {
-            id: 'link',
-            label: '링크',
+            id: 'wiki-link',
+            label: '일반 링크',
+            Icon: MapPinned,
+            run: () => undefined,
+            submenu: 'page-link',
+            disabled: !hasSelectedText,
+            active: internalLinkActive
+        },
+        {
+            id: 'hyperlink',
+            label: '하이퍼 링크',
             Icon: Link2,
-            run: applyLink,
-            active: editor?.isActive('link') ?? false
+            run: applyHyperlink,
+            active: (editor?.isActive('link') ?? false) && !internalLinkActive
+        },
+        {
+            id: 'font-size-increase',
+            label: '글자 크기 늘리기',
+            Icon: AArrowUp,
+            run: () => changeFontSize(FONT_SIZE_STEP)
+        },
+        {
+            id: 'font-size-decrease',
+            label: '글자 크기 줄이기',
+            Icon: AArrowDown,
+            run: () => changeFontSize(-FONT_SIZE_STEP)
         }
     ]
     const blockActions: ToolbarAction[] = [
@@ -795,35 +1409,35 @@ export function WikiEditor({ client, page, pages, collaborationUrl, onCreatePage
             id: 'bullet',
             label: '항목 나열',
             Icon: List,
-            run: () => editor?.chain().focus().toggleBulletList().run(),
+            run: toggleBulletList,
             active: editor?.isActive('bulletList') ?? false
         },
         {
             id: 'ordered',
             label: '번호 나열',
             Icon: ListOrdered,
-            run: () => editor?.chain().focus().toggleOrderedList().run(),
+            run: toggleOrderedList,
             active: editor?.isActive('orderedList') ?? false
         },
         {
             id: 'blockquote',
             label: '인용문',
             Icon: Quote,
-            run: () => editor?.chain().focus().toggleBlockquote().run(),
+            run: toggleBlockquote,
             active: editor?.isActive('blockquote') ?? false
         },
         {
             id: 'codeBlock',
             label: '코드 블록',
             Icon: FileCode2,
-            run: () => editor?.chain().focus().toggleCodeBlock().run(),
+            run: toggleCodeBlock,
             active: editor?.isActive('codeBlock') ?? false
         },
         {
             id: 'rule',
             label: '구분선',
             Icon: Minus,
-            run: () => editor?.chain().focus().setHorizontalRule().run()
+            run: insertHorizontalRule
         },
         {
             id: 'clear',
@@ -833,10 +1447,57 @@ export function WikiEditor({ client, page, pages, collaborationUrl, onCreatePage
         }
     ]
 
-    const hasSelectedText = editor
-        ? !editor.state.selection.empty &&
-          Boolean(editor.state.doc.textBetween(editor.state.selection.from, editor.state.selection.to, ' ').trim())
-        : false
+    const tableActions: ExtraMenuAction[] = [
+        {
+            id: 'add-table-row-before',
+            label: '위에 행 삽입',
+            Icon: BetweenHorizontalStart,
+            run: addTableRowBefore
+        },
+        {
+            id: 'add-table-row-after',
+            label: '아래에 행 삽입',
+            Icon: BetweenHorizontalEnd,
+            run: addTableRowAfter
+        },
+        {
+            id: 'delete-table-row',
+            label: '현재 행 제거',
+            Icon: Rows3,
+            run: deleteTableRow
+        },
+        {
+            id: 'add-table-column-before',
+            label: '왼쪽에 열 삽입',
+            Icon: BetweenVerticalStart,
+            run: addTableColumnBefore
+        },
+        {
+            id: 'add-table-column-after',
+            label: '오른쪽에 열 삽입',
+            Icon: BetweenVerticalEnd,
+            run: addTableColumnAfter
+        },
+        {
+            id: 'delete-table-column',
+            label: '현재 열 제거',
+            Icon: Columns3,
+            run: deleteTableColumn
+        },
+        {
+            id: 'toggle-table-header-column',
+            label: isHeaderColumnActive ? '제목 열 해제' : '제목 열 설정',
+            Icon: PanelLeft,
+            run: toggleTableHeaderColumn,
+            active: isHeaderColumnActive
+        },
+        {
+            id: 'delete-table',
+            label: '표 삭제',
+            Icon: Trash2,
+            run: deleteActiveTable
+        }
+    ]
     const extraActions: ExtraMenuAction[] = [
         {
             id: 'new-page',
@@ -846,24 +1507,22 @@ export function WikiEditor({ client, page, pages, collaborationUrl, onCreatePage
             disabled: !hasSelectedText
         },
         {
-            id: 'page-link',
-            label: '페이지 링크',
-            Icon: MapPinned,
-            run: () => undefined,
-            submenu: 'page-link',
-            disabled: !hasSelectedText
-        },
-        {
             id: 'bullet-list',
             label: '글머리 기호 목록',
             Icon: List,
-            run: () => editor?.chain().focus().toggleBulletList().run()
+            run: toggleBulletList
         },
         {
             id: 'ordered-list',
             label: '번호 매기기 목록',
             Icon: ListOrdered,
-            run: () => editor?.chain().focus().toggleOrderedList().run()
+            run: toggleOrderedList
+        },
+        {
+            id: 'insert-table',
+            label: '표 삽입',
+            Icon: Table2,
+            run: insertTable
         },
         {
             id: 'todo-list',
@@ -881,13 +1540,17 @@ export function WikiEditor({ client, page, pages, collaborationUrl, onCreatePage
             id: 'code',
             label: '코드',
             Icon: Code2,
-            run: () => insertContextContent({ type: 'codeBlock', content: [{ type: 'text', text: 'code' }] })
+            run: () =>
+                insertContextContent({
+                    type: 'codeBlock',
+                    content: [{ type: 'text', text: 'code' }]
+                })
         },
         {
             id: 'quote',
             label: '인용',
             Icon: TextQuote,
-            run: () => editor?.chain().focus().toggleBlockquote().run()
+            run: toggleBlockquote
         },
         {
             id: 'layout',
@@ -926,12 +1589,32 @@ export function WikiEditor({ client, page, pages, collaborationUrl, onCreatePage
             : metadataSaveState === 'saving' || saveState === 'saving'
               ? 'saving'
               : saveState
+    if (!contentReady) {
+        return (
+            <section className="editor-frame" aria-label="문서 불러오는 중">
+                <div className="editor-workspace">
+                    <div className="save-indicator loading" role="status">
+                        <span className="save-dot" />
+                        <span>문서 불러오는 중</span>
+                    </div>
+                </div>
+            </section>
+        )
+    }
     return (
-        <section className="editor-frame" aria-label="위키 편집">
-            <EditorTopBar pages={pages} currentSlug={page.slug} />
+        <section className={`editor-frame ${editable ? 'is-editable' : 'is-readonly'}`} aria-label="위키 문서">
+            <EditorTopBar
+                client={client}
+                editable={editable}
+                pages={pages}
+                currentSlug={page.slug}
+                collaborators={collaborators}
+                pageHrefForSlug={pageHrefForSlug}
+            />
             <div className="editor-workspace">
                 <EditorHeader
                     title={title}
+                    editable={editable}
                     icon={icon}
                     showIconPicker={showIconPicker}
                     onTitleChange={updateTitle}
@@ -939,55 +1622,60 @@ export function WikiEditor({ client, page, pages, collaborationUrl, onCreatePage
                     onSelectIcon={selectPageIcon}
                     onSelectEmoji={selectPageIconFromPicker}
                 />
-                <EditorStatusBar
-                    editor={editor}
-                    saveState={effectiveSaveState}
-                    pendingDraft={pendingDraft}
-                    onUndo={undo}
-                    onRedo={redo}
-                    onRestoreDraft={restoreLocalDraft}
-                    onDiscardDraft={discardLocalDraft}
-                />
-                {metadataSaveState === 'error' ? (
-                    <div className="local-draft-banner" role="alert">
+                {editable ? (
+                    <EditorStatusBar editor={editor} saveState={effectiveSaveState} onUndo={undo} onRedo={redo} />
+                ) : null}
+                {editable && metadataSaveState === 'error' ? (
+                    <div className="wiki-alert-banner" role="alert">
                         <strong>문서 제목 또는 아이콘을 저장하지 못했습니다.</strong>
-                        <div className="local-draft-actions">
+                        <div className="wiki-alert-actions">
                             <button type="button" onClick={() => void retryMetadataSave()}>
                                 다시 시도
                             </button>
                         </div>
                     </div>
                 ) : null}
-                {editorActionError ? (
-                    <div className="local-draft-banner" role="alert">
+                {editable && editorActionError ? (
+                    <div className="wiki-alert-banner" role="alert">
                         <strong>{editorActionError}</strong>
-                        <div className="local-draft-actions">
+                        <div className="wiki-alert-actions">
                             <button type="button" onClick={() => setEditorActionError(null)}>
                                 닫기
                             </button>
                         </div>
                     </div>
                 ) : null}
-                <SavepointPanel
-                    savepoints={savepoints}
-                    state={savepointState}
-                    onCreate={createSavepointNow}
-                    onRestore={restoreDocumentSavepoint}
-                    onRetry={retrySavepoints}
-                />
-                <EditorContent
-                    editor={editor}
-                    className="editor-content"
-                    onBeforeInput={markEditorChangedIntent}
-                    onContextMenu={openContextMenu}
-                    onKeyDown={handleEditorKeyDown}
-                    onMouseDown={handleEditorMouseDown}
-                    onMouseUp={handleEditorMouseUp}
-                    onPaste={markEditorChangedIntent}
-                />
+                {editable ? (
+                    <SavepointPanel
+                        pageId={page.id}
+                        savepoints={savepoints}
+                        state={savepointState}
+                        onCreate={createSavepointNow}
+                        onRestore={restoreDocumentSavepoint}
+                        onRetry={retrySavepoints}
+                    />
+                ) : null}
+                <div ref={editorStageRef} className="editor-presence-stage">
+                    <EditorContent
+                        editor={editor}
+                        className={'editor-content ' + (imageDragActive ? 'is-image-drag-active' : '')}
+                        onBeforeInput={editable ? markEditorChangedIntent : undefined}
+                        onContextMenu={editable ? openContextMenu : undefined}
+                        onCopy={editable ? handleEditorCopy : undefined}
+                        onCut={editable ? handleEditorCut : undefined}
+                        onDragEnterCapture={editable ? handleEditorDragEnter : undefined}
+                        onDragLeaveCapture={editable ? handleEditorDragLeave : undefined}
+                        onDragOverCapture={editable ? handleEditorDragOver : undefined}
+                        onKeyDownCapture={editable ? handleEditorKeyDownCapture : undefined}
+                        onKeyDown={editable ? handleEditorKeyDown : undefined}
+                    />
+                    {editable ? (
+                        <EditorLinePresence editor={editor} collaborators={collaborators} stageRef={editorStageRef} />
+                    ) : null}
+                </div>
             </div>
 
-            {contextMenu ? (
+            {editable && contextMenu ? (
                 <EditorContextMenus
                     menu={contextMenu}
                     submenu={contextSubmenu}
@@ -995,10 +1683,19 @@ export function WikiEditor({ client, page, pages, collaborationUrl, onCreatePage
                     inlineActions={inlineActions}
                     blockActions={blockActions}
                     extraActions={extraActions}
+                    tableActions={tableActions}
                     pages={pages}
+                    categories={categories}
                     highlightActive={isHighlightBlockActive}
+                    tableActive={isTableActive}
+                    codeBlockActive={isCodeBlockActive}
+                    codeLanguage={activeCodeLanguage}
+                    quoteTone={activeQuoteTone}
+                    quoteColor={activeQuoteColor}
                     highlightWidth={activeHighlightWidth}
                     highlightShape={activeHighlightShape}
+                    highlightBackgroundColor={activeHighlightBackgroundColor}
+                    tableHeaderBackground={activeTableHeaderBackground}
                     onSetBlockStyle={setBlockStyle}
                     onToggleSubmenu={toggleContextSubmenu}
                     onSetTextColor={setTextColor}
@@ -1008,9 +1705,17 @@ export function WikiEditor({ client, page, pages, collaborationUrl, onCreatePage
                     onInsertHighlight={insertHighlightBlock}
                     onSetHighlightWidth={setHighlightBlockWidth}
                     onSetHighlightShape={setHighlightBlockShape}
+                    onSetHighlightBackgroundColor={setHighlightBlockBackgroundColor}
+                    onUnsetHighlightBackgroundColor={unsetHighlightBlockBackgroundColor}
+                    onSetTableHeaderBackground={setTableHeaderBackground}
+                    onUnsetTableHeaderBackground={unsetTableHeaderBackground}
+                    onSetQuoteTone={setQuoteTone}
+                    onSetQuoteColor={setQuoteColor}
+                    onSetCodeLanguage={setCodeLanguage}
                     onInsertEmoji={insertEmoji}
                     onRunExtraAction={runExtraMenuAction}
                     onSelectPageLink={linkSelectionToPage}
+                    onSelectCategoryLink={linkSelectionToCategory}
                 />
             ) : null}
         </section>

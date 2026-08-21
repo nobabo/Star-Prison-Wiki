@@ -3,7 +3,6 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { WikiPageDetailDto, WikiSnapshotDto } from '@coconut-studio/wiki-contracts'
 
 import { fetchPageBySlug, saveWikiSnapshot, WikiApiError, type ApiClient } from '../../../shared/api/wiki-api'
-import { clearWikiDraft, loadWikiDraft, storeWikiDraft, type WikiLocalDraft } from '../../../shared/storage/local-draft'
 import type { SaveState } from '../editor-types'
 
 type SnapshotAutosaveInput = {
@@ -13,7 +12,6 @@ type SnapshotAutosaveInput = {
 
 export function useSnapshotAutosave({ client, page }: SnapshotAutosaveInput) {
     const [saveState, setSaveState] = useState<SaveState>('idle')
-    const [pendingDraft, setPendingDraft] = useState<WikiLocalDraft | null>(null)
     const latestMarkdown = useRef(page.markdown)
     const lastSavedMarkdown = useRef(page.markdown)
     const hasUserEdited = useRef(false)
@@ -39,7 +37,6 @@ export function useSnapshotAutosave({ client, page }: SnapshotAutosaveInput) {
 
                     baseSnapshotUpdatedAt.current = response.snapshot.updatedAt
                     lastSavedMarkdown.current = markdown
-                    clearWikiDraft(pageId, markdown)
                     if (markdown === latestMarkdown.current) setSaveState('saved')
                     return true
                 } catch (error) {
@@ -51,7 +48,6 @@ export function useSnapshotAutosave({ client, page }: SnapshotAutosaveInput) {
                             baseSnapshotUpdatedAt.current = current.page.snapshotUpdatedAt
                             if (current.page.markdown === latestMarkdown.current) {
                                 lastSavedMarkdown.current = latestMarkdown.current
-                                clearWikiDraft(pageId, latestMarkdown.current)
                                 setSaveState('saved')
                                 return true
                             }
@@ -63,12 +59,8 @@ export function useSnapshotAutosave({ client, page }: SnapshotAutosaveInput) {
                     }
 
                     const latestIsSaved = latestMarkdown.current === lastSavedMarkdown.current
-                    const localDraft = latestIsSaved
-                        ? null
-                        : storeWikiDraft(pageId, latestMarkdown.current, lastSavedMarkdown.current)
-                    if (latestIsSaved) clearWikiDraft(pageId)
                     if (markdown === latestMarkdown.current) {
-                        setSaveState(latestIsSaved ? 'idle' : localDraft ? 'local' : 'error')
+                        setSaveState(latestIsSaved ? 'idle' : 'error')
                     }
                     console.error(error)
                     return false
@@ -94,20 +86,18 @@ export function useSnapshotAutosave({ client, page }: SnapshotAutosaveInput) {
             if (markdown === lastSavedMarkdown.current) {
                 if (timer.current !== null) window.clearTimeout(timer.current)
                 timer.current = null
-                clearWikiDraft(page.id, markdown)
                 setSaveState('idle')
                 return
             }
 
             if (timer.current !== null) window.clearTimeout(timer.current)
-            storeWikiDraft(page.id, markdown, lastSavedMarkdown.current)
             setSaveState('saving')
             timer.current = window.setTimeout(() => {
                 timer.current = null
                 void saveSnapshot(markdown)
             }, 1_000)
         },
-        [page.id, saveSnapshot]
+        [saveSnapshot]
     )
 
     useEffect(() => {
@@ -119,14 +109,6 @@ export function useSnapshotAutosave({ client, page }: SnapshotAutosaveInput) {
         setSaveState('idle')
         if (timer.current !== null) window.clearTimeout(timer.current)
         timer.current = null
-
-        const storedDraft = loadWikiDraft(page.id)
-        if (storedDraft?.markdown === page.markdown) {
-            clearWikiDraft(page.id, storedDraft.markdown)
-            setPendingDraft(null)
-        } else {
-            setPendingDraft(storedDraft)
-        }
     }, [page.id, page.markdown, page.snapshotUpdatedAt])
 
     useEffect(() => {
@@ -150,32 +132,16 @@ export function useSnapshotAutosave({ client, page }: SnapshotAutosaveInput) {
         [saveSnapshot]
     )
 
-    function restoreDraft(): string | null {
-        if (!pendingDraft) return null
-        hasUserEdited.current = true
-        setPendingDraft(null)
-        scheduleSave(pendingDraft.markdown)
-        return pendingDraft.markdown
-    }
-
-    function discardDraft(): void {
-        clearWikiDraft(page.id)
-        setPendingDraft(null)
-    }
-
     function adoptSnapshot(snapshot: WikiSnapshotDto): void {
         if (snapshot.pageId !== currentPageId.current) return
         baseSnapshotUpdatedAt.current = snapshot.updatedAt
         latestMarkdown.current = snapshot.markdown
         lastSavedMarkdown.current = snapshot.markdown
-        clearWikiDraft(snapshot.pageId)
-        setPendingDraft(null)
         setSaveState('saved')
     }
 
     return {
         saveState,
-        pendingDraft,
         latestMarkdown,
         lastSavedMarkdown,
         hasUserEdited,
@@ -183,8 +149,6 @@ export function useSnapshotAutosave({ client, page }: SnapshotAutosaveInput) {
         flushSnapshot: saveSnapshot,
         adoptSnapshot,
         getSnapshotUpdatedAt: () => baseSnapshotUpdatedAt.current,
-        restoreDraft,
-        discardDraft,
         markUserEdited: () => {
             hasUserEdited.current = true
         }

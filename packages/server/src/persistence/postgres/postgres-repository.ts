@@ -20,6 +20,7 @@ import type {
     NavigationPreferencesRepository,
     PageRepository,
     PermissionRepository,
+    UpdatePageAddressInput,
     UpdatePageMetaInput,
     WikiRepositories
 } from '../repository'
@@ -48,6 +49,19 @@ export class PostgresWikiRepository
             ORDER BY title ASC
         `)
         return rows.map(mapPage)
+    }
+
+    async listPageDetails(): Promise<WikiPageDetailDto[]> {
+        const { rows } = await this.pool.query(`
+            SELECT p.id, p.slug, p.title, p.icon, p.visibility, p.created_by, p.created_at,
+                   p.updated_at, p.deleted_at, p.deleted_by, s.markdown, s.rendered_html,
+                   s.updated_by, s.updated_at AS snapshot_updated_at
+            FROM wiki_pages p
+            JOIN wiki_markdown_snapshots s ON s.page_id = p.id
+            WHERE p.deleted_at IS NULL
+            ORDER BY p.title ASC
+        `)
+        return rows.map(mapPageDetail)
     }
 
     async getPageById(pageId: string): Promise<WikiPageDetailDto | null> {
@@ -86,9 +100,19 @@ export class PostgresWikiRepository
     async updatePageMeta(input: UpdatePageMetaInput): Promise<WikiPageDetailDto | null> {
         const { rowCount } = await this.pool.query(
             `UPDATE wiki_pages
-             SET title = $2, icon = $3, slug = $4, visibility = $5, updated_at = NOW()
+             SET title = $2, icon = $3, visibility = $4, updated_at = NOW()
              WHERE id = $1 AND deleted_at IS NULL`,
-            [input.pageId, input.title, normalizePageIcon(input.icon), input.slug, input.visibility]
+            [input.pageId, input.title, normalizePageIcon(input.icon), input.visibility]
+        )
+        return rowCount ? this.getPageById(input.pageId) : null
+    }
+
+    async updatePageAddress(input: UpdatePageAddressInput): Promise<WikiPageDetailDto | null> {
+        const { rowCount } = await this.pool.query(
+            `UPDATE wiki_pages
+             SET slug = $2, updated_at = NOW()
+             WHERE id = $1 AND deleted_at IS NULL`,
+            [input.pageId, input.slug]
         )
         return rowCount ? this.getPageById(input.pageId) : null
     }
@@ -146,7 +170,7 @@ export class PostgresWikiRepository
 
     async listSavepoints(pageId: string, limit: number): Promise<WikiSavepointDto[]> {
         const { rows } = await this.pool.query(
-            `SELECT id, page_id, actor_id, created_at
+            `SELECT id, page_id, markdown, actor_id, created_at
              FROM wiki_revisions
              WHERE page_id = $1
              ORDER BY created_at DESC, id DESC
@@ -522,7 +546,8 @@ function mapSavepoint(row: Record<string, unknown>): WikiSavepointDto {
         id: String(row.id),
         pageId: String(row.page_id),
         createdBy: String(row.actor_id),
-        createdAt: toIso(row.created_at)
+        createdAt: toIso(row.created_at),
+        markdown: String(row.markdown ?? '')
     }
 }
 

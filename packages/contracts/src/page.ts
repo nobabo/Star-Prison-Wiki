@@ -43,6 +43,17 @@ export type WikiPageListResponse = {
     pages: WikiPageDto[]
 }
 
+export type WikiSearchMatch = 'title-exact' | 'title-contains' | 'content-exact' | 'content-contains'
+
+export type WikiPageSearchResultDto = {
+    page: WikiPageDto
+    match: WikiSearchMatch
+}
+
+export type WikiPageSearchResponse = {
+    results: WikiPageSearchResultDto[]
+}
+
 export type CreateWikiPageRequest = {
     title: string
     icon?: string | null
@@ -51,7 +62,9 @@ export type CreateWikiPageRequest = {
     markdown: string
 }
 
-export type UpdateWikiPageMetaRequest = Omit<CreateWikiPageRequest, 'markdown'>
+export type UpdateWikiPageMetaRequest = Pick<CreateWikiPageRequest, 'title' | 'icon' | 'visibility'>
+
+export type UpdateWikiPageAddressRequest = Pick<CreateWikiPageRequest, 'slug'>
 
 export type SaveWikiSnapshotRequest = {
     markdown: string

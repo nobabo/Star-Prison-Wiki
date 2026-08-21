@@ -41,9 +41,9 @@ export function TrashView({ status, pages, onRestore, onPurge, onPurgeAll, onClo
             </header>
 
             {error ? (
-                <div className="local-draft-banner" role="alert">
+                <div className="wiki-alert-banner" role="alert">
                     <span>{error}</span>
-                    <div className="local-draft-actions">
+                    <div className="wiki-alert-actions">
                         <button type="button" onClick={clearError}>
                             닫기
                         </button>

@@ -18,7 +18,7 @@ export class EditorErrorBoundary extends Component<EditorErrorBoundaryProps, Edi
         if (!this.state.error) return this.props.children
         return (
             <div className="state-panel document-error-state" role="alert">
-                <p>편집기를 불러오지 못했습니다.</p>
+                <p>문서를 불러오지 못했습니다.</p>
                 <button type="button" onClick={() => window.location.reload()}>
                     페이지 새로고침
                 </button>
