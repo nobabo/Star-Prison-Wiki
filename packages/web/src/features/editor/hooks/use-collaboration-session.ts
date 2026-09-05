@@ -27,8 +27,8 @@ export function useCollaborationSession({
 }: CollaborationSessionInput): CollaborationSession {
     const [synced, setSynced] = useState(false)
     const [provider, setProvider] = useState<HocuspocusProvider | null>(null)
-    useCardInsertControl(pageId, editable)
-    useCategoryPageCreateControl(pageId, editable)
+    useCardInsertControl(pageId, editable && synced)
+    useCategoryPageCreateControl(pageId, editable && synced)
 
     useEffect(() => {
         setSynced(false)

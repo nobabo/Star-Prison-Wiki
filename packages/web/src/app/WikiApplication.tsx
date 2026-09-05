@@ -418,11 +418,7 @@ export function WikiApplication({ brand, navigationStore }: WikiApplicationProps
     }
 
     async function renamePage(page: WikiPageDto, title: string): Promise<void> {
-        const result = await updatePageMeta(client, page.id, {
-            title,
-            icon: page.icon,
-            visibility: page.visibility
-        })
+        const result = await updatePageMeta(client, page.id, { title })
         acceptCreatedPage(result.page)
     }
 
@@ -485,9 +481,8 @@ export function WikiApplication({ brand, navigationStore }: WikiApplicationProps
         const result = changes.slug
             ? await updatePageAddress(client, page.id, { slug: changes.slug })
             : await updatePageMeta(client, page.id, {
-                  title: changes.title ?? page.title,
-                  icon: changes.icon === undefined ? page.icon : changes.icon,
-                  visibility: page.visibility
+                  ...(changes.title === undefined ? {} : { title: changes.title }),
+                  ...(changes.icon === undefined ? {} : { icon: changes.icon })
               })
         acceptCategoryPageUpdate(category.id, result.page)
         return result

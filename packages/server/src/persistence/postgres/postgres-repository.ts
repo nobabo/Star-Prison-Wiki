@@ -9,6 +9,7 @@ import type {
     WikiSnapshotDto
 } from '@coconut-studio/wiki-contracts'
 import { renderMarkdownToHtml } from '@coconut-studio/wiki-markdown'
+import { replaceMarkdownYState } from '../../modules/collaboration/markdown-y-state'
 import pg from 'pg'
 
 import { strongestPermission } from '../../modules/pages/page-policy'
@@ -68,6 +69,55 @@ export class PostgresWikiRepository
         return this.getPage('p.id = $1', pageId)
     }
 
+    async searchPages(input: import('../../shared/page-search').PageSearchInput) {
+        const escapeLike = (value: string) => value.replace(/[\\%_]/g, '\\$&')
+        const query = input.query.normalize('NFKC').toLocaleLowerCase('ko')
+        const keywords = [...new Set(query.split(/\s+/u).filter(Boolean))].map((word) => `%${escapeLike(word)}%`)
+        const { rows } = await this.pool.query(
+            `WITH candidates AS (
+                SELECT id FROM wiki_pages
+                WHERE deleted_at IS NULL AND lower(normalize(title, NFKC)) LIKE $1
+                UNION
+                SELECT page_id AS id FROM wiki_markdown_snapshots
+                WHERE lower(normalize(markdown, NFKC)) LIKE ALL($2::text[])
+             )
+             SELECT p.id, p.slug, p.title, p.icon, p.visibility, p.created_by, p.created_at,
+                    p.updated_at, p.deleted_at, p.deleted_by,
+                    CASE WHEN lower(normalize(p.title, NFKC)) = $3 THEN 'title-exact'
+                         WHEN lower(normalize(p.title, NFKC)) LIKE $1 THEN 'title-contains'
+                         WHEN lower(normalize(s.markdown, NFKC)) ~ $6 THEN 'content-exact'
+                         ELSE 'content-contains' END AS match
+             FROM candidates c JOIN wiki_pages p ON p.id = c.id
+             JOIN wiki_markdown_snapshots s ON s.page_id = p.id
+             WHERE p.deleted_at IS NULL AND (
+                 p.visibility = 'public' OR $4::boolean OR EXISTS (
+                     SELECT 1 FROM wiki_permissions acl WHERE acl.page_id = p.id AND (
+                         (acl.subject_type = 'user' AND acl.subject_id = $5) OR
+                         (acl.subject_type = 'role' AND acl.subject_id = ANY($7::text[]))
+                     ) AND acl.access IN ('read', 'write', 'admin')
+                 )
+             )
+             ORDER BY CASE WHEN lower(normalize(p.title, NFKC)) = $3 THEN 1
+                           WHEN lower(normalize(p.title, NFKC)) LIKE $1 THEN 2
+                           WHEN lower(normalize(s.markdown, NFKC)) ~ $6 THEN 3 ELSE 4 END, p.title, p.id
+             LIMIT $8`,
+            [
+                `%${escapeLike(query)}%`,
+                keywords,
+                query,
+                input.roles.some((role) => role === 'wiki:admin' || role === 'wiki:writer'),
+                input.userId,
+                `(^|[^[:alnum:]])${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^[:alnum:]]|$)`,
+                input.roles,
+                input.limit
+            ]
+        )
+        return rows.map((row) => ({
+            page: mapPage(row),
+            match: row.match as import('@coconut-studio/wiki-contracts').WikiSearchMatch
+        }))
+    }
+
     async getPageBySlug(slug: string): Promise<WikiPageDetailDto | null> {
         return this.getPage('p.slug = $1', slug)
     }
@@ -100,9 +150,17 @@ export class PostgresWikiRepository
     async updatePageMeta(input: UpdatePageMetaInput): Promise<WikiPageDetailDto | null> {
         const { rowCount } = await this.pool.query(
             `UPDATE wiki_pages
-             SET title = $2, icon = $3, visibility = $4, updated_at = NOW()
+             SET title = COALESCE($2, title),
+                 icon = CASE WHEN $3::boolean THEN $4 ELSE icon END,
+                 visibility = COALESCE($5, visibility), updated_at = NOW()
              WHERE id = $1 AND deleted_at IS NULL`,
-            [input.pageId, input.title, normalizePageIcon(input.icon), input.visibility]
+            [
+                input.pageId,
+                input.title ?? null,
+                input.icon !== undefined,
+                normalizePageIcon(input.icon),
+                input.visibility ?? null
+            ]
         )
         return rowCount ? this.getPageById(input.pageId) : null
     }
@@ -265,6 +323,17 @@ export class PostgresWikiRepository
                  WHERE page_id = $1
                  RETURNING updated_at`,
                 [input.pageId, markdown, renderedHtml, input.actorId]
+            )
+            const documentName = `wiki:${input.pageId}`
+            const previous = await client.query(
+                'SELECT y_state FROM wiki_doc_states WHERE document_name = $1 FOR UPDATE',
+                [documentName]
+            )
+            const state = await replaceMarkdownYState(previous.rows[0]?.y_state ?? null, markdown)
+            await client.query(
+                `INSERT INTO wiki_doc_states (document_name, page_id, y_state, stored_at) VALUES ($1, $2, $3, NOW())
+                 ON CONFLICT (document_name) DO UPDATE SET y_state = EXCLUDED.y_state, stored_at = NOW()`,
+                [documentName, input.pageId, Buffer.from(state)]
             )
             await client.query('UPDATE wiki_pages SET updated_at = NOW() WHERE id = $1', [input.pageId])
             return restored.rows[0] ? toIso(restored.rows[0].updated_at) : null

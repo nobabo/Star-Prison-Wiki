@@ -132,7 +132,7 @@ export function restoreWikiSavepoint(
     )
 }
 
-export async function uploadWikiImage(client: ApiClient, file: File): Promise<{ url: string }> {
+export async function uploadWikiImage(client: ApiClient, file: File, pageId: string): Promise<{ url: string }> {
     const mimeType = getImageUploadMimeType(file)
     if (!mimeType) throw new WikiApiError(400, 'unsupported_image_type', 'Unsupported image type')
     if (file.size > MAX_IMAGE_UPLOAD_BYTES) {
@@ -141,7 +141,7 @@ export async function uploadWikiImage(client: ApiClient, file: File): Promise<{ 
 
     const upload = await request<{ uploadId: string }>(client, '/media/uploads', {
         method: 'POST',
-        body: JSON.stringify({ fileName: file.name, mimeType, size: file.size })
+        body: JSON.stringify({ fileName: file.name, mimeType, size: file.size, pageId })
     })
 
     try {
@@ -160,10 +160,11 @@ export async function uploadWikiImage(client: ApiClient, file: File): Promise<{ 
             method: 'POST'
         })
     } catch (error) {
-        void fetch(`${basePath(client)}/media/uploads/${upload.uploadId}`, {
+        await fetch(`${basePath(client)}/media/uploads/${upload.uploadId}`, {
             method: 'DELETE',
-            headers: authHeaders(client)
-        })
+            headers: authHeaders(client),
+            signal: AbortSignal.timeout(5000)
+        }).catch(() => undefined)
         throw error
     }
 }

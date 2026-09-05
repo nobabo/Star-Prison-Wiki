@@ -15,7 +15,11 @@
         "@hocuspocus/server": "^4.1.2",
         "express": "^5.2.1",
         "jose": "^6.2.0",
+        "parse5": "^8.0.1",
         "pg": "^8.16.3",
         "yjs": "^13.6.27"
+    },
+    "devDependencies": {
+        "@hocuspocus/provider": "^4.4.0"
     }
 }

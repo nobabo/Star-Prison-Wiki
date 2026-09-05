@@ -1,4 +1,6 @@
 import { Router, type Request, type Response } from 'express'
+import { MEDIA_COOKIE } from '../media/media-storage'
+import { readBearerToken } from './auth-service'
 
 import { badRequest, HttpError } from '../../shared/http/http-error'
 import type { WikiAuthService } from './auth-service'
@@ -14,6 +16,14 @@ export function createAuthRouter(authService: WikiAuthService, options: AuthRout
 
     router.get('/auth/me', async (request, response) => {
         const user = await authService.authenticateRequest(request)
+        response.setHeader('Cache-Control', 'no-store')
+        response.cookie(MEDIA_COOKIE, user ? (readBearerToken(request.headers.authorization) ?? '') : '', {
+            httpOnly: true,
+            sameSite: 'strict',
+            secure: options.forceSecureCookie || isSecureRequest(request),
+            path: '/api/wiki/media',
+            maxAge: user ? 8 * 60 * 60 * 1000 : 0
+        })
         response.json({ ...authService.status, user })
     })
 

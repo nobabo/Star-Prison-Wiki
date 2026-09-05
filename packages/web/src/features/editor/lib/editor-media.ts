@@ -62,11 +62,12 @@ export async function uploadAndInsertImages(
     editor: Editor,
     client: ApiClient,
     files: File[],
+    pageId: string,
     requestedPosition?: number
 ): Promise<void> {
     const images: JSONContent[] = []
     for (const file of files) {
-        const { url } = await uploadWikiImage(client, file)
+        const { url } = await uploadWikiImage(client, file, pageId)
         images.push({ type: 'image', attrs: { src: url, alt: file.name } })
     }
     if (images.length === 0) return

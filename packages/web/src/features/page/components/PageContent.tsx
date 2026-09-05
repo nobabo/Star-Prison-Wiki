@@ -1,4 +1,5 @@
 import { lazy, Suspense } from 'react'
+import { ReadOnlyPage } from './ReadOnlyPage'
 import { FileText } from 'lucide-react'
 
 import type { WikiPageDetailDto, WikiPageDto, WikiPageResponse, WikiUserDto } from '@coconut-studio/wiki-contracts'
@@ -63,6 +64,16 @@ export function PageContent({
     }
 
     const editable = canEdit && response.permissions.write
+    if (!editable)
+        return (
+            <ReadOnlyPage
+                key={response.page.id}
+                page={response.page}
+                pages={pages}
+                client={client}
+                pageHrefForSlug={pageHrefForSlug}
+            />
+        )
 
     return (
         <EditorErrorBoundary key={`${response.page.id}:${editable ? 'edit' : 'read'}`}>

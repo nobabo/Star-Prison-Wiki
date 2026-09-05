@@ -17,12 +17,7 @@ export type CreatePageInput = {
     actorId: string
 }
 
-export type UpdatePageMetaInput = {
-    pageId: string
-    title: string
-    icon?: string | null
-    visibility: WikiVisibility
-}
+export type UpdatePageMetaInput = { pageId: string; title?: string; icon?: string | null; visibility?: WikiVisibility }
 
 export type UpdatePageAddressInput = {
     pageId: string
@@ -68,6 +63,9 @@ export interface PageRepository {
     restorePage(pageId: string): Promise<WikiPageDto | null>
     purgePage(pageId: string): Promise<boolean>
     purgePages(pageIds: string[]): Promise<number>
+    searchPages(
+        input: import('../shared/page-search').PageSearchInput
+    ): Promise<import('@coconut-studio/wiki-contracts').WikiPageSearchResultDto[]>
 }
 
 export interface NavigationPreferencesRepository {

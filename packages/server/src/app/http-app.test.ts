@@ -240,6 +240,16 @@ describe('wiki HTTP API', () => {
 
     it('persists one shared navigation structure for every viewer', async () => {
         const api = await startApi()
+        await api.request('/api/wiki/pages', {
+            method: 'POST',
+            token: 'dev-admin',
+            body: {
+                title: 'Guides',
+                slug: 'category-guides',
+                visibility: 'public',
+                markdown: ''
+            }
+        })
         const initial = await api.request('/api/wiki/navigation/preferences')
         expect(initial.status).toBe(200)
         expect(((await initial.json()) as { initialized: boolean }).initialized).toBe(false)
@@ -305,6 +315,41 @@ describe('wiki HTTP API', () => {
         expect(forbiddenSave.status).toBe(403)
     })
 
+    it('hides private category metadata and references from anonymous navigation', async () => {
+        const api = await startApi()
+        await api.request('/api/wiki/pages', {
+            method: 'POST',
+            token: 'dev-admin',
+            body: { title: 'Secret category', slug: 'secret-category', visibility: 'private', markdown: '' }
+        })
+        await api.request('/api/wiki/navigation/preferences', {
+            method: 'PUT',
+            token: 'dev-admin',
+            body: {
+                baseVersion: null,
+                preferences: {
+                    categories: [
+                        {
+                            id: 'secret',
+                            title: 'Secret label',
+                            icon: '',
+                            documentSlug: 'secret-category',
+                            pageSlugs: ['welcome'],
+                            collapsed: false
+                        }
+                    ],
+                    rootPageSlugs: ['secret-category', 'welcome'],
+                    favoriteSlugs: ['secret-category'],
+                    theme: 'dark'
+                }
+            }
+        })
+        const result = await api.request('/api/wiki/navigation/preferences')
+        expect(await result.json()).toMatchObject({
+            preferences: { categories: [], rootPageSlugs: ['welcome'], favoriteSlugs: [] }
+        })
+    })
+
     it('assembles a GIF from proxy-safe upload chunks', async () => {
         const api = await startApi({ hiddenMediaDirectory: true })
         const gif = Buffer.alloc(512 * 1024 + 7, 0x2a)
@@ -314,10 +359,26 @@ describe('wiki HTTP API', () => {
         const initialized = await fetch(`${api.baseUrl}/api/wiki/media/uploads`, {
             method: 'POST',
             headers: { ...authHeaders, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ fileName: 'animation.GIF', mimeType: 'image/gif', size: gif.length })
+            body: JSON.stringify({
+                fileName: 'animation.GIF',
+                mimeType: 'image/gif',
+                size: gif.length,
+                pageId: 'welcome'
+            })
         })
         expect(initialized.status).toBe(201)
         const { uploadId } = (await initialized.json()) as { uploadId: string }
+
+        const premature = await api.request(`/api/wiki/media/uploads/${uploadId}/complete`, {
+            method: 'POST',
+            token: 'dev-admin'
+        })
+        expect(premature.status).toBe(400)
+        const otherOwner = await api.request(`/api/wiki/media/uploads/${uploadId}/complete`, {
+            method: 'POST',
+            token: 'dev-writer'
+        })
+        expect(otherOwner.status).toBe(403)
 
         for (const [index, chunk] of [gif.subarray(0, 512 * 1024), gif.subarray(512 * 1024)].entries()) {
             const uploaded = await fetch(`${api.baseUrl}/api/wiki/media/uploads/${uploadId}/chunks/${index}`, {
@@ -326,6 +387,12 @@ describe('wiki HTTP API', () => {
                 body: chunk
             })
             expect(uploaded.status).toBe(204)
+            const retried = await fetch(`${api.baseUrl}/api/wiki/media/uploads/${uploadId}/chunks/${index}`, {
+                method: 'PUT',
+                headers: { ...authHeaders, 'Content-Type': 'application/octet-stream' },
+                body: chunk
+            })
+            expect(retried.status).toBe(204)
         }
 
         const completed = await fetch(`${api.baseUrl}/api/wiki/media/uploads/${uploadId}/complete`, {
@@ -340,6 +407,34 @@ describe('wiki HTTP API', () => {
         expect(served.status).toBe(200)
         expect(served.headers.get('content-type')).toContain('image/gif')
         expect(Buffer.from(await served.arrayBuffer())).toEqual(gif)
+        expect(served.headers.get('cache-control')).toContain('no-store')
+        const retriedComplete = await api.request(`/api/wiki/media/uploads/${uploadId}/complete`, {
+            method: 'POST',
+            token: 'dev-admin'
+        })
+        expect(retriedComplete.status).toBe(201)
+        expect(await retriedComplete.json()).toMatchObject({ url })
+        await api.request('/api/wiki/pages/welcome/meta', {
+            method: 'PATCH',
+            token: 'dev-admin',
+            body: { visibility: 'private' }
+        })
+        await api.request('/api/wiki/pages/welcome/meta', {
+            method: 'PATCH',
+            token: 'dev-admin',
+            body: { title: 'Renamed' }
+        })
+        expect((await api.request('/api/wiki/pages/welcome')).status).toBe(403)
+        expect((await fetch(`${api.baseUrl}${url}`)).status).toBe(403)
+        expect((await fetch(`${api.baseUrl}${url}`, { headers: authHeaders })).status).toBe(200)
+        const me = await api.request('/api/wiki/auth/me', { token: 'dev-admin' })
+        const cookie = me.headers.get('set-cookie')?.split(';')[0] ?? ''
+        expect(cookie).toContain('wiki_media_session=')
+        expect((await fetch(`${api.baseUrl}${url}`, { headers: { Cookie: cookie } })).status).toBe(200)
+        const logout = await api.request('/api/wiki/auth/me')
+        expect(logout.headers.get('set-cookie')).toContain('Max-Age=0')
+        await api.request('/api/wiki/pages/welcome', { method: 'DELETE', token: 'dev-admin' })
+        expect((await fetch(`${api.baseUrl}${url}`, { headers: authHeaders })).status).toBe(404)
     })
 })
 
@@ -374,6 +469,7 @@ async function startApi(options: { hiddenMediaDirectory?: boolean } = {}) {
     })
     const baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
     cleanups.push(async () => {
+        server.closeAllConnections()
         await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())))
         await repositories.close()
         await rm(directory, { recursive: true, force: true })
