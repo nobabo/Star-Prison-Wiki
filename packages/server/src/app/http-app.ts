@@ -21,6 +21,8 @@ export function createWikiHttpApp(options: WikiHttpAppOptions): Express {
     const app = express()
     const logger = options.logger ?? console
     app.disable('x-powered-by')
+    // The API listens on loopback; only the local reverse proxy may forward client IPs.
+    app.set('trust proxy', 'loopback')
     app.use('/api/wiki', (_request, response, next) => {
         response.setHeader('Cache-Control', 'private, no-store')
         response.setHeader('X-Content-Type-Options', 'nosniff')
