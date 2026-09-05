@@ -1644,7 +1644,7 @@ export function WikiEditor({
             <div className="editor-workspace">
                 <EditorHeader
                     title={title}
-                    editable={editable}
+                    editable={editable && collaborationSynced}
                     icon={icon}
                     showIconPicker={showIconPicker}
                     onTitleChange={updateTitle}
@@ -1723,15 +1723,15 @@ export function WikiEditor({
                     <EditorContent
                         editor={editor}
                         className={'editor-content ' + (imageDragActive ? 'is-image-drag-active' : '')}
-                        onBeforeInput={editable ? markEditorChangedIntent : undefined}
-                        onContextMenu={editable ? openContextMenu : undefined}
-                        onCopy={editable ? handleEditorCopy : undefined}
-                        onCut={editable ? handleEditorCut : undefined}
-                        onDragEnterCapture={editable ? handleEditorDragEnter : undefined}
-                        onDragLeaveCapture={editable ? handleEditorDragLeave : undefined}
-                        onDragOverCapture={editable ? handleEditorDragOver : undefined}
-                        onKeyDownCapture={editable ? handleEditorKeyDownCapture : undefined}
-                        onKeyDown={editable ? handleEditorKeyDown : undefined}
+                        onBeforeInput={editable && collaborationSynced ? markEditorChangedIntent : undefined}
+                        onContextMenu={editable && collaborationSynced ? openContextMenu : undefined}
+                        onCopy={editable && collaborationSynced ? handleEditorCopy : undefined}
+                        onCut={editable && collaborationSynced ? handleEditorCut : undefined}
+                        onDragEnterCapture={editable && collaborationSynced ? handleEditorDragEnter : undefined}
+                        onDragLeaveCapture={editable && collaborationSynced ? handleEditorDragLeave : undefined}
+                        onDragOverCapture={editable && collaborationSynced ? handleEditorDragOver : undefined}
+                        onKeyDownCapture={editable && collaborationSynced ? handleEditorKeyDownCapture : undefined}
+                        onKeyDown={editable && collaborationSynced ? handleEditorKeyDown : undefined}
                     />
                     {editable ? (
                         <EditorLinePresence editor={editor} collaborators={collaborators} stageRef={editorStageRef} />
@@ -1739,7 +1739,7 @@ export function WikiEditor({
                 </div>
             </div>
 
-            {editable && contextMenu ? (
+            {editable && collaborationSynced && contextMenu ? (
                 <EditorContextMenus
                     menu={contextMenu}
                     submenu={contextSubmenu}
