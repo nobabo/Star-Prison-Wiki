@@ -16,6 +16,7 @@ export default defineConfig({
         chunkSizeWarningLimit: 500,
         rollupOptions: {
             output: {
+                onlyExplicitManualChunks: true,
                 manualChunks(id) {
                     if (id.includes('emoji-picker-react')) return 'emoji-picker'
                     if (id.includes('@tiptap') || id.includes('prosemirror')) return 'editor'

@@ -1,11 +1,16 @@
 import { Router } from 'express'
+import { directPageMutation, type PageMutation } from '../collaboration/page-mutation'
 
 import type { WikiAuthService } from '../auth/auth-service'
 import { WikiPageService } from '../pages/page-service'
 import type { WikiRepositories } from '../../persistence/repository'
 import { badRequest, HttpError, notFound } from '../../shared/http/http-error'
 
-export function createSavepointRouter(repositories: WikiRepositories, authService: WikiAuthService): Router {
+export function createSavepointRouter(
+    repositories: WikiRepositories,
+    authService: WikiAuthService,
+    mutatePage: PageMutation = directPageMutation
+): Router {
     const router = Router()
     const pages = new WikiPageService(repositories)
     const auth = (request: Parameters<WikiAuthService['authenticateRequest']>[0]) =>
@@ -29,12 +34,14 @@ export function createSavepointRouter(repositories: WikiRepositories, authServic
         const actor = await pages.requirePageWriter(pageId, await auth(request))
         const body = asObject(request.body)
         try {
-            const snapshot = await repositories.pages.restoreSavepoint({
-                pageId,
-                savepointId: String(request.params.savepointId),
-                actorId: actorDisplayName(actor),
-                expectedUpdatedAt: requireText(body.baseSnapshotUpdatedAt, 'baseSnapshotUpdatedAt')
-            })
+            const snapshot = await mutatePage(pageId, () =>
+                repositories.pages.restoreSavepoint({
+                    pageId,
+                    savepointId: String(request.params.savepointId),
+                    actorId: actorDisplayName(actor),
+                    expectedUpdatedAt: requireText(body.baseSnapshotUpdatedAt, 'baseSnapshotUpdatedAt')
+                })
+            )
             if (!snapshot) throw notFound('Wiki savepoint was not found')
             response.json({ snapshot })
         } catch (error) {

@@ -1,3 +1,4 @@
+import { clearSessionDrafts } from '../../shared/storage/session-draft'
 export const TOKEN_STORAGE_KEY = 'coconut-studio-wiki-token'
 
 type BrowserLocation = Pick<Location, 'hash' | 'pathname' | 'search'>
@@ -44,7 +45,10 @@ export function readAuthToken(storage: TokenStorage = window.localStorage): stri
 export function writeAuthToken(token: string, storage: TokenStorage = window.localStorage): void {
     try {
         if (token) storage.setItem(TOKEN_STORAGE_KEY, token)
-        else storage.removeItem(TOKEN_STORAGE_KEY)
+        else {
+            storage.removeItem(TOKEN_STORAGE_KEY)
+            clearSessionDrafts()
+        }
     } catch {
         // Authentication still works for the current page when storage is unavailable.
     }

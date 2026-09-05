@@ -33,8 +33,7 @@ export function usePageMetadataAutosave({ client, page, onPageUpdated }: PageMet
                 const savingVersion = version.current
                 const result = await updatePageMeta(client, page.id, {
                     title: titleRef.current,
-                    icon: normalizePageIcon(iconRef.current),
-                    visibility: page.visibility
+                    icon: normalizePageIcon(iconRef.current)
                 })
                 if (savingVersion !== version.current) continue
                 dirty.current = false
@@ -49,7 +48,7 @@ export function usePageMetadataAutosave({ client, page, onPageUpdated }: PageMet
         } finally {
             saving.current = false
         }
-    }, [client, onPageUpdated, page.id, page.visibility])
+    }, [client, onPageUpdated, page.id])
 
     useEffect(() => {
         flushRef.current = flush

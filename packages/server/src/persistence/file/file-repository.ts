@@ -12,6 +12,7 @@ import type {
     WikiVisibility
 } from '@coconut-studio/wiki-contracts'
 import { renderMarkdownToHtml } from '@coconut-studio/wiki-markdown'
+import { replaceMarkdownYState } from '../../modules/collaboration/markdown-y-state'
 
 import { strongestPermission } from '../../modules/pages/page-policy'
 import { normalizePageIcon } from '../../shared/page-normalization'
@@ -99,6 +100,17 @@ export class FileWikiRepository
             .map((page) => withSnapshot(page, store))
             .sort((left, right) => left.title.localeCompare(right.title))
     }
+    async searchPages(input: import('../../shared/page-search').PageSearchInput) {
+        const readable = []
+        for (const page of await this.listPageDetails()) {
+            const permission = input.userId
+                ? await this.resolvePagePermission({ pageId: page.id, userId: input.userId, roles: input.roles })
+                : 'none'
+            if (page.visibility === 'public' || permission !== 'none') readable.push(page)
+        }
+        const { searchPageDetails } = await import('../../shared/page-search')
+        return searchPageDetails(readable, input)
+    }
 
     async getPageById(pageId: string): Promise<WikiPageDetailDto | null> {
         const store = await this.readStableStore()
@@ -140,9 +152,9 @@ export class FileWikiRepository
         return this.mutate(async (store) => {
             const page = store.pages.find((entry) => entry.id === input.pageId && !entry.deletedAt)
             if (!page) return null
-            page.title = input.title
-            page.icon = normalizePageIcon(input.icon)
-            page.visibility = input.visibility
+            if (input.title !== undefined) page.title = input.title
+            if (input.icon !== undefined) page.icon = normalizePageIcon(input.icon)
+            if (input.visibility !== undefined) page.visibility = input.visibility
             page.updatedAt = new Date().toISOString()
             return withSnapshot(page, store)
         })
@@ -247,6 +259,19 @@ export class FileWikiRepository
                 input.actorId,
                 nextTimestamp(previousTimestamp)
             )
+            const documentName = `wiki:${input.pageId}`
+            const previousState = store.yStates.find((entry) => entry.documentName === documentName)
+            const state = await replaceMarkdownYState(
+                previousState ? Buffer.from(previousState.stateBase64, 'base64') : null,
+                target.markdown
+            )
+            store.yStates = store.yStates.filter((entry) => entry.documentName !== documentName)
+            store.yStates.push({
+                documentName,
+                pageId: input.pageId,
+                stateBase64: Buffer.from(state).toString('base64'),
+                storedAt: restored.updatedAt
+            })
             store.snapshots[snapshotIndex] = restored
             page.updatedAt = restored.updatedAt
             return { ...restored }

@@ -19,7 +19,7 @@ describe('image uploads', () => {
         globalThis.fetch = fetchMock
         const gif = new File([new Uint8Array(512 * 1024 + 7)], 'animation.GIF', { type: '' })
 
-        await expect(uploadWikiImage({ token: 'writer' }, gif)).resolves.toEqual({
+        await expect(uploadWikiImage({ token: 'writer' }, gif, 'welcome')).resolves.toEqual({
             url: '/api/wiki/media/animation.gif'
         })
 

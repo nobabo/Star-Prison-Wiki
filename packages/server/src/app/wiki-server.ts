@@ -29,22 +29,26 @@ export type WikiServerRuntime = {
 export function createWikiServer(options: WikiServerOptions): WikiServerRuntime {
     const logger = options.logger ?? console
     const authService = new WikiAuthService(options.auth, options.repositories.adminAccounts)
-    const app = createWikiHttpApp({
-        repositories: options.repositories,
-        authService,
-        authRouter: {
-            transactionCookieName: 'cs_wiki_google_oauth',
-            forceSecureCookie: options.forceSecureCookie ?? false
-        },
-        mediaDirectory: options.mediaDirectory,
-        logger
-    })
     const collaboration = createCollaborationServer({
         name: `${options.name}-sync`,
         port: options.collaborationPort,
         repositories: options.repositories,
         authService
     })
+    const app = createWikiHttpApp({
+        ...{
+            repositories: options.repositories,
+            authService,
+            authRouter: {
+                transactionCookieName: 'cs_wiki_google_oauth',
+                forceSecureCookie: options.forceSecureCookie ?? false
+            },
+            mediaDirectory: options.mediaDirectory,
+            logger
+        },
+        mutatePage: collaboration.mutatePage
+    })
+
     let httpServer: HttpServer | null = null
 
     return {

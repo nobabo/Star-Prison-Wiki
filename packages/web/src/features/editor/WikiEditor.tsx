@@ -107,6 +107,7 @@ import {
 import { usePageMetadataAutosave } from './hooks/use-page-metadata-autosave'
 import { useSavepoints } from './hooks/use-savepoints'
 import { useSnapshotAutosave } from './hooks/use-snapshot-autosave'
+import { readSessionDraft, writeSessionDraft, clearSessionDraft } from '../../shared/storage/session-draft'
 import { getContainingDocumentElementEnd } from './lib/document-elements'
 import { createHighlightBlockContent, getCurrentBlockValue, getEditorSelectionRect } from './lib/editor-utils'
 import {
@@ -204,6 +205,8 @@ export function WikiEditor({
     const imageDragDepth = useRef(0)
     const contextMenuSelection = useRef<{ from: number; to: number } | null>(null)
     const collaborationSyncedRef = useRef(false)
+    const actorId = currentUser?.userId ?? 'anonymous'
+    const [recoveryDraft, setRecoveryDraft] = useState(() => readSessionDraft(actorId, page.id))
     const editorStageRef = useRef<HTMLDivElement>(null)
     const { provider: collaborationProvider, synced: collaborationSynced } = useCollaborationSession({
         editable,
@@ -214,6 +217,7 @@ export function WikiEditor({
     })
     const {
         saveState,
+        lastSavedMarkdown,
         hasUserEdited,
         scheduleSave,
         flushSnapshot,
@@ -245,8 +249,11 @@ export function WikiEditor({
     } = usePageMetadataAutosave({ client, page, onPageUpdated })
     const serializeEditorUpdate = useCallback(
         (updatedEditor: Editor) => {
-            if (!editable || !collaborationSyncedRef.current) return
-            const markdownValue = getEditorMarkdown(updatedEditor)
+            if (!editable) return
+            const pending = getEditorMarkdown(updatedEditor)
+            if (hasUserEdited.current) writeSessionDraft(actorId, page.id, pending)
+            if (!collaborationSyncedRef.current) return
+            const markdownValue = pending
 
             if (!hasUserEdited.current && page.markdown.trim() && !markdownValue.trim()) {
                 scheduleSave(page.markdown)
@@ -255,7 +262,7 @@ export function WikiEditor({
             scheduleSave(markdownValue)
             if (hasUserEdited.current) markSavepointChanged()
         },
-        [editable, hasUserEdited, markSavepointChanged, page.markdown, scheduleSave]
+        [actorId, editable, hasUserEdited, markSavepointChanged, page.id, page.markdown, scheduleSave]
     )
     const finishSelectionDragEvent = useEffectEvent((event: globalThis.MouseEvent) => {
         finishEditorSelectionDrag(event.button, event.clientX, event.clientY)
@@ -361,7 +368,30 @@ export function WikiEditor({
 
     useEffect(() => {
         collaborationSyncedRef.current = collaborationSynced
-    }, [collaborationSynced])
+        editor?.setEditable(editable && collaborationSynced, false)
+        if (editor && editable && collaborationSynced) serializeEditorUpdate(editor)
+    }, [collaborationSynced, editable, editor, serializeEditorUpdate])
+    useEffect(() => {
+        if (saveState === 'saved' && editor) clearSessionDraft(actorId, page.id, lastSavedMarkdown.current)
+    }, [actorId, page.id, saveState, editor, lastSavedMarkdown])
+    useEffect(() => {
+        const warnBeforeClose = (event: BeforeUnloadEvent) => {
+            if (!editable || !editor) return
+            const markdown = getEditorMarkdown(editor)
+            if (
+                saveState === 'saving' ||
+                saveState === 'error' ||
+                collaborationProvider?.hasUnsyncedChanges ||
+                (hasUserEdited.current && markdown !== lastSavedMarkdown.current)
+            ) {
+                writeSessionDraft(actorId, page.id, markdown)
+                event.preventDefault()
+                event.returnValue = ''
+            }
+        }
+        window.addEventListener('beforeunload', warnBeforeClose)
+        return () => window.removeEventListener('beforeunload', warnBeforeClose)
+    }, [actorId, collaborationProvider, editable, editor, page.id, saveState, hasUserEdited, lastSavedMarkdown])
 
     useEffect(() => {
         if (!collaborationSynced || !editor) return
@@ -493,7 +523,7 @@ export function WikiEditor({
         if (!snapshot || !editor) return
         hasUserEdited.current = false
         adoptSnapshot(snapshot)
-        setEditorMarkdown(editor, snapshot.markdown)
+        window.location.reload()
         editor.commands.focus()
     }
 
@@ -1089,7 +1119,7 @@ export function WikiEditor({
         try {
             setEditorActionError(null)
             markEditorChangedIntent()
-            await uploadAndInsertImages(editor, client, files, position)
+            await uploadAndInsertImages(editor, client, files, page.id, position)
         } catch (error) {
             console.error(error)
             setEditorActionError('이미지를 업로드하지 못했습니다. 지원 형식과 100MB 이하 파일인지 확인해 주세요.')
@@ -1646,14 +1676,48 @@ export function WikiEditor({
                     </div>
                 ) : null}
                 {editable ? (
-                    <SavepointPanel
-                        pageId={page.id}
-                        savepoints={savepoints}
-                        state={savepointState}
-                        onCreate={createSavepointNow}
-                        onRestore={restoreDocumentSavepoint}
-                        onRetry={retrySavepoints}
-                    />
+                    <>
+                        {editable && !collaborationSynced ? (
+                            <div className="local-draft-banner" role="alert">
+                                연결이 끊겨 편집을 잠시 중지했습니다. 연결되면 다시 편집할 수 있습니다.
+                            </div>
+                        ) : null}
+                        {editable && recoveryDraft && recoveryDraft.markdown !== page.markdown ? (
+                            <div className="local-draft-banner" role="status">
+                                <span>이 탭에 저장되지 않은 초안이 있습니다.</span>
+                                <button
+                                    type="button"
+                                    disabled={!collaborationSynced}
+                                    onClick={() => {
+                                        if (!editor) return
+                                        markUserEdited()
+                                        setEditorMarkdown(editor, recoveryDraft.markdown)
+                                        scheduleSave(recoveryDraft.markdown)
+                                        setRecoveryDraft(null)
+                                    }}
+                                >
+                                    초안 복구
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        clearSessionDraft(actorId, page.id)
+                                        setRecoveryDraft(null)
+                                    }}
+                                >
+                                    초안 버리기
+                                </button>
+                            </div>
+                        ) : null}
+                        <SavepointPanel
+                            pageId={page.id}
+                            savepoints={savepoints}
+                            state={savepointState}
+                            onCreate={createSavepointNow}
+                            onRestore={restoreDocumentSavepoint}
+                            onRetry={retrySavepoints}
+                        />
+                    </>
                 ) : null}
                 <div ref={editorStageRef} className="editor-presence-stage">
                     <EditorContent

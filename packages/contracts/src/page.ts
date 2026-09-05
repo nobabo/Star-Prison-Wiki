@@ -62,7 +62,7 @@ export type CreateWikiPageRequest = {
     markdown: string
 }
 
-export type UpdateWikiPageMetaRequest = Pick<CreateWikiPageRequest, 'title' | 'icon' | 'visibility'>
+export type UpdateWikiPageMetaRequest = Partial<Pick<CreateWikiPageRequest, 'title' | 'icon' | 'visibility'>>
 
 export type UpdateWikiPageAddressRequest = Pick<CreateWikiPageRequest, 'slug'>
 

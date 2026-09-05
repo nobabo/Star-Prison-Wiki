@@ -1,4 +1,6 @@
 import { Router } from 'express'
+import { directPageMutation, mutateManyPages, type PageMutation } from '../collaboration/page-mutation'
+import { rateLimit } from '../../shared/http/rate-limit'
 import type { WikiNavigationPreferencesDto, WikiSnapshotDto } from '@coconut-studio/wiki-contracts'
 
 import type { WikiAuthService } from '../auth/auth-service'
@@ -10,7 +12,11 @@ import { WikiPageService } from './page-service'
 
 const GLOBAL_NAVIGATION_ID = 'wiki:global-navigation'
 
-export function createPageRouter(repositories: WikiRepositories, authService: WikiAuthService): Router {
+export function createPageRouter(
+    repositories: WikiRepositories,
+    authService: WikiAuthService,
+    mutatePage: PageMutation = directPageMutation
+): Router {
     const router = Router()
     const pages = new WikiPageService(repositories)
     const auth = (request: Parameters<WikiAuthService['authenticateRequest']>[0]) =>
@@ -20,7 +26,7 @@ export function createPageRouter(repositories: WikiRepositories, authService: Wi
         response.json({ pages: await pages.listReadablePages(await auth(request)) })
     })
 
-    router.get('/pages/search', async (request, response) => {
+    router.get('/pages/search', rateLimit(120), async (request, response) => {
         const query = typeof request.query.q === 'string' ? request.query.q.trim() : ''
         if (query.length > 100) throw badRequest('q must contain at most 100 characters')
         response.json({ results: await pages.searchReadablePages(query, await auth(request)) })
@@ -31,7 +37,23 @@ export function createPageRouter(repositories: WikiRepositories, authService: Wi
         const globalRecord = await repositories.navigation.getNavigationPreferences(GLOBAL_NAVIGATION_ID)
         const legacyRecord =
             !globalRecord && actor ? await repositories.navigation.getNavigationPreferences(actor.userId) : null
-        const preferences = globalRecord?.preferences ?? legacyRecord?.preferences ?? defaultNavigationPreferences()
+        const storedPreferences =
+            globalRecord?.preferences ?? legacyRecord?.preferences ?? defaultNavigationPreferences()
+        const readable = new Set((await pages.listReadablePages(actor)).map((page) => page.slug))
+        const isAdmin = actor?.roles.includes('wiki:admin')
+        const preferences = isAdmin
+            ? storedPreferences
+            : {
+                  ...storedPreferences,
+                  categories: storedPreferences.categories
+                      .filter((category) => !category.documentSlug || readable.has(category.documentSlug))
+                      .map((category) => ({
+                          ...category,
+                          pageSlugs: category.pageSlugs.filter((slug) => readable.has(slug))
+                      })),
+                  rootPageSlugs: storedPreferences.rootPageSlugs.filter((slug) => readable.has(slug)),
+                  favoriteSlugs: storedPreferences.favoriteSlugs.filter((slug) => readable.has(slug))
+              }
         response.json({
             preferences,
             initialized: Boolean(globalRecord || legacyRecord),
@@ -86,7 +108,9 @@ export function createPageRouter(repositories: WikiRepositories, authService: Wi
     router.patch('/pages/:pageId/meta', async (request, response) => {
         const pageId = String(request.params.pageId)
         await pages.requirePageWriter(pageId, await auth(request))
-        const page = await repositories.pages.updatePageMeta({ pageId, ...parseMetaBody(request.body) })
+        const changes = parseMetaBody(request.body)
+        const update = () => repositories.pages.updatePageMeta({ pageId, ...changes })
+        const page = await (changes.visibility === undefined ? update() : mutatePage(pageId, update))
         if (!page) throw notFound('Wiki page was not found')
         response.json({ page })
     })
@@ -126,7 +150,7 @@ export function createPageRouter(repositories: WikiRepositories, authService: Wi
     router.delete('/pages/:pageId', async (request, response) => {
         const pageId = String(request.params.pageId)
         const actor = await pages.requirePageAdmin(pageId, await auth(request))
-        const page = await repositories.pages.trashPage({ pageId, actorId: actor.userId })
+        const page = await mutatePage(pageId, () => repositories.pages.trashPage({ pageId, actorId: actor.userId }))
         if (!page) throw notFound('Wiki page was not found')
         response.json({ page })
     })
@@ -134,7 +158,11 @@ export function createPageRouter(repositories: WikiRepositories, authService: Wi
     router.post('/pages/batch/trash', async (request, response) => {
         const actor = await pages.requireGlobalAdmin(await auth(request))
         const pageIds = parsePageIds(request.body)
-        response.json({ pages: await repositories.pages.trashPages({ pageIds, actorId: actor.userId }) })
+        response.json({
+            pages: await mutateManyPages(mutatePage, pageIds, () =>
+                repositories.pages.trashPages({ pageIds, actorId: actor.userId })
+            )
+        })
     })
 
     router.post('/pages/:pageId/restore', async (request, response) => {
@@ -148,14 +176,17 @@ export function createPageRouter(repositories: WikiRepositories, authService: Wi
     router.delete('/pages/:pageId/purge', async (request, response) => {
         const pageId = String(request.params.pageId)
         await pages.requirePageAdmin(pageId, await auth(request))
-        if (!(await repositories.pages.purgePage(pageId))) throw notFound('Wiki page was not found')
+        if (!(await mutatePage(pageId, () => repositories.pages.purgePage(pageId))))
+            throw notFound('Wiki page was not found')
         response.json({ ok: true })
     })
 
     router.post('/pages/batch/purge', async (request, response) => {
         await pages.requireGlobalAdmin(await auth(request))
         const pageIds = parsePageIds(request.body)
-        response.json({ purged: await repositories.pages.purgePages(pageIds) })
+        response.json({
+            purged: await mutateManyPages(mutatePage, pageIds, () => repositories.pages.purgePages(pageIds))
+        })
     })
 
     router.get('/trash', async (request, response) => {
@@ -163,7 +194,7 @@ export function createPageRouter(repositories: WikiRepositories, authService: Wi
         response.json({ pages: await repositories.pages.listTrashedPages() })
     })
 
-    router.use(createSavepointRouter(repositories, authService))
+    router.use(createSavepointRouter(repositories, authService, mutatePage))
 
     return router
 }
@@ -182,11 +213,13 @@ function parsePageBody(body: unknown) {
 
 function parseMetaBody(body: unknown) {
     const value = asObject(body)
-    return {
-        title: requireText(value.title, 'title'),
-        icon: normalizePageIcon(value.icon),
-        visibility: requireVisibility(value.visibility)
+    const result = {
+        ...(value.title === undefined ? {} : { title: requireText(value.title, 'title') }),
+        ...(value.icon === undefined ? {} : { icon: normalizePageIcon(value.icon) }),
+        ...(value.visibility === undefined ? {} : { visibility: requireVisibility(value.visibility) })
     }
+    if (Object.keys(result).length === 0) throw badRequest('At least one metadata field is required')
+    return result
 }
 
 function parseNavigationPreferencesBody(body: unknown): WikiNavigationPreferencesDto {
